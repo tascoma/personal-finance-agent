@@ -1,0 +1,24 @@
+# Web framework
+fastapi
+uvicorn[standard]
+
+# Data validation & settings
+pydantic
+pydantic-settings
+
+# AI agents
+pydantic-ai
+
+# Templating
+jinja2
+
+# Forms / file uploads (FastAPI dependency for form parsing)
+python-multipart
+
+# Database
+sqlalchemy
+
+# Dev / test
+pytest
+pytest-asyncio
+httpx
