@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Personal Finance Agent{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <script>
+    (function () {
+      var saved = localStorage.getItem('theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (saved === 'dark' || (!saved && prefersDark)) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-logo">&#9654;</span>
+      <span class="sidebar-name">Finance Agent</span>
+    </div>
+    <ul class="sidebar-nav">
+      <li>
+        <a href="/" class="nav-link {% if active_page == 'dashboard' %}nav-link--active{% endif %}">
+          <span class="nav-icon">&#9632;</span>
+          Dashboard
+        </a>
+      </li>
+      <li>
+        <a href="/workflows" class="nav-link {% if active_page == 'workflows' %}nav-link--active{% endif %}">
+          <span class="nav-icon">&#9654;</span>
+          Workflows
+        </a>
+      </li>
+      <li>
+        <a href="#" class="nav-link {% if active_page == 'upload' %}nav-link--active{% endif %}">
+          <span class="nav-icon">&#8679;</span>
+          Upload
+        </a>
+      </li>
+      <li>
+        <a href="#" class="nav-link {% if active_page == 'journal' %}nav-link--active{% endif %}">
+          <span class="nav-icon">&#9783;</span>
+          Journal Entries
+        </a>
+      </li>
+      <li>
+        <a href="#" class="nav-link {% if active_page == 'close' %}nav-link--active{% endif %}">
+          <span class="nav-icon">&#10003;</span>
+          Month-End Close
+        </a>
+      </li>
+      <li>
+        <a href="#" class="nav-link {% if active_page == 'reports' %}nav-link--active{% endif %}">
+          <span class="nav-icon">&#9700;</span>
+          Reports
+        </a>
+      </li>
+    </ul>
+    <div class="sidebar-footer">
+      <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode">
+        <span class="theme-icon theme-icon--light">&#9790;</span>
+        <span class="theme-icon theme-icon--dark">&#9728;</span>
+        <span class="theme-label theme-label--light">Dark mode</span>
+        <span class="theme-label theme-label--dark">Light mode</span>
+      </button>
+    </div>
+  </nav>
+  <script>
+    (function () {
+      var btn = document.getElementById('theme-toggle');
+      btn.addEventListener('click', function () {
+        var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+          document.documentElement.removeAttribute('data-theme');
+          localStorage.setItem('theme', 'light');
+        } else {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          localStorage.setItem('theme', 'dark');
+        }
+      });
+    })();
+  </script>
+
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

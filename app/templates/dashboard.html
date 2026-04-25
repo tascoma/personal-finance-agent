@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% set active_page = "dashboard" %}
+
+{% block title %}Dashboard — Personal Finance Agent{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-row">
+    <div>
+      <h1>Dashboard</h1>
+      <p class="page-subtitle">Financial overview</p>
+    </div>
+    <div class="period-info">
+      <span class="period-label">{{ period.month }} {{ period.year }}</span>
+      <span class="period-badge period-badge--{{ period.status }}">
+        {{ period.status | capitalize }}
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="metrics-row">
+  <div class="metric-card">
+    <span class="metric-label">Total Income</span>
+    <span class="metric-value income">${{ "%.2f" | format(metrics.income) }}</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Total Expenses</span>
+    <span class="metric-value expenses">${{ "%.2f" | format(metrics.expenses) }}</span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Net Income</span>
+    <span class="metric-value {% if metrics.net_income >= 0 %}net-positive{% else %}net-negative{% endif %}">
+      ${{ "%.2f" | format(metrics.net_income) }}
+    </span>
+  </div>
+  <div class="metric-card">
+    <span class="metric-label">Total Assets</span>
+    <span class="metric-value">${{ "%.2f" | format(metrics.total_assets) }}</span>
+  </div>
+</div>
+
+<div class="section-card">
+  <div class="section-header">
+    <h2 class="section-title">Recent Journal Entries</h2>
+    <a href="#" class="section-action">View all &#8594;</a>
+  </div>
+
+  {% if recent_entries %}
+  <table class="entries-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Description</th>
+        <th>Debit</th>
+        <th>Credit</th>
+        <th>Account</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in recent_entries %}
+      <tr>
+        <td>{{ entry.date }}</td>
+        <td>{{ entry.description }}</td>
+        <td>{{ "$%.2f" | format(entry.debit) if entry.debit else "—" }}</td>
+        <td>{{ "$%.2f" | format(entry.credit) if entry.credit else "—" }}</td>
+        <td>{{ entry.account }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">
+    <span class="empty-icon">&#9783;</span>
+    <p>No journal entries yet.</p>
+    <p class="empty-hint">Upload a document to generate entries automatically.</p>
+    <a href="#" class="btn-primary">Upload Document</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
