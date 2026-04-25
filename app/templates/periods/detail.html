@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% set active_page = "periods" %}
+
+{% block title %}{{ period.period_start.strftime("%B %Y") }} — Personal Finance Agent{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-row">
+    <div>
+      <h1>{{ period.period_start.strftime("%B %Y") }}</h1>
+      <p class="page-subtitle">
+        {{ period.period_start.strftime("%Y-%m-%d") }} → {{ period.period_end.strftime("%Y-%m-%d") }}
+      </p>
+    </div>
+    <div class="period-info">
+      <span class="period-badge period-badge--{{ period.status }}">
+        {{ period.status.replace('_', ' ') | capitalize }}
+      </span>
+    </div>
+  </div>
+</div>
+
+{% if error %}
+<div class="section-card error-banner">
+  <p>{{ error }}</p>
+</div>
+{% endif %}
+
+<div class="section-card">
+  <div class="section-header">
+    <h2 class="section-title">Lifecycle</h2>
+  </div>
+  <div class="period-detail-body">
+    {% if next_status %}
+    <form method="post" action="/periods/{{ period.period_id }}/status" class="inline-form">
+      <input type="hidden" name="new_status" value="{{ next_status }}" />
+      <button type="submit" class="btn-primary">
+        Advance to {{ next_status.replace('_', ' ') }}
+      </button>
+    </form>
+    {% elif period.status == 'closed' %}
+    <p class="page-subtitle">This period is closed.</p>
+    <form method="post" action="/periods/{{ period.period_id }}/reopen" class="inline-form" style="margin-top: 12px;">
+      <button type="submit" class="btn-secondary">Reopen period</button>
+    </form>
+    {% endif %}
+
+    {% if period.closed_at %}
+    <p class="page-subtitle" style="margin-top: 12px;">
+      Closed on {{ period.closed_at.strftime("%Y-%m-%d %H:%M UTC") }}
+    </p>
+    {% endif %}
+
+    {% if period.status == 'open' %}
+    <form method="post" action="/periods/{{ period.period_id }}/delete" class="inline-form" style="margin-top: 16px;"
+          onsubmit="return confirm('Delete this period? This cannot be undone.');">
+      <button type="submit" class="btn-danger">Delete period</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="section-card">
+  <div class="section-header">
+    <h2 class="section-title">Documents</h2>
+  </div>
+  <div class="empty-state">
+    <span class="empty-icon">&#9776;</span>
+    <p>No documents uploaded yet.</p>
+    <p class="empty-hint">Document upload lands in the next phase.</p>
+  </div>
+</div>
+
+<p style="margin-top: 24px;">
+  <a href="/periods" class="section-action">← All periods</a>
+</p>
+{% endblock %}

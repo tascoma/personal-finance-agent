@@ -10,15 +10,27 @@
       <h1>Dashboard</h1>
       <p class="page-subtitle">Financial overview</p>
     </div>
+    {% if period %}
     <div class="period-info">
-      <span class="period-label">{{ period.month }} {{ period.year }}</span>
+      <span class="period-label">{{ period.period_start.strftime("%B %Y") }}</span>
       <span class="period-badge period-badge--{{ period.status }}">
-        {{ period.status | capitalize }}
+        {{ period.status.replace('_', ' ') | capitalize }}
       </span>
     </div>
+    {% endif %}
   </div>
 </div>
 
+{% if not period %}
+<div class="section-card">
+  <div class="empty-state">
+    <span class="empty-icon">&#9632;</span>
+    <p>No open period yet.</p>
+    <p class="empty-hint">Create a period to start tracking transactions.</p>
+    <a href="/periods" class="btn-primary">Go to periods</a>
+  </div>
+</div>
+{% else %}
 <div class="metrics-row">
   <div class="metric-card">
     <span class="metric-label">Total Income</span>
@@ -44,7 +56,9 @@
   <div class="empty-state">
     <span class="empty-icon">&#9783;</span>
     <p>No data yet.</p>
-    <p class="empty-hint">Select a period and upload documents to get started.</p>
+    <p class="empty-hint">Upload documents to this period to get started.</p>
+    <a href="/periods/{{ period.period_id }}" class="btn-primary">Open period</a>
   </div>
 </div>
+{% endif %}
 {% endblock %}

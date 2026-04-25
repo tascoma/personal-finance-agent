@@ -1,13 +1,21 @@
 import uuid
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+PeriodStatus = Literal["open", "pending_review", "pending_close", "closed"]
 
 
 class PeriodCreate(BaseModel):
-    period_start: date
-    period_end: date
+    """Create a period by month. period_start/period_end are derived server-side."""
+
+    year: int = Field(ge=1900, le=2100)
+    month: int = Field(ge=1, le=12)
+
+
+class PeriodUpdate(BaseModel):
+    status: PeriodStatus
 
 
 class PeriodRead(BaseModel):

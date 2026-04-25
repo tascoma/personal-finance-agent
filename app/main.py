@@ -9,6 +9,7 @@ from app.core.logging import configure_logging
 from app.databases import init_db
 from app.routes.accounts import router as accounts_router
 from app.routes.dashboard import router as dashboard_router
+from app.routes.periods import router as periods_router
 
 
 @asynccontextmanager
@@ -22,6 +23,7 @@ app = FastAPI(title="Personal Finance Agent", lifespan=lifespan)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(dashboard_router)
+app.include_router(periods_router)
 app.include_router(accounts_router)
 
 

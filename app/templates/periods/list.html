@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% set active_page = "periods" %}
+
+{% block title %}Periods — Personal Finance Agent{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Periods</h1>
+  <p class="page-subtitle">Monthly accounting periods — the workflow starts here</p>
+</div>
+
+{% if error %}
+<div class="section-card error-banner">
+  <p>{{ error }}</p>
+</div>
+{% endif %}
+
+<div class="section-card">
+  <form method="post" action="/periods" class="period-form">
+    <span class="period-form-label">New period</span>
+    <div class="period-form-fields">
+      <label for="year" class="field-label">Year</label>
+      <input type="number" id="year" name="year" min="1900" max="2100" placeholder="2026" required class="period-form-input" />
+      <label for="month" class="field-label">Month</label>
+      <select id="month" name="month" required class="period-form-select">
+        <option value="1">January</option>
+        <option value="2">February</option>
+        <option value="3">March</option>
+        <option value="4">April</option>
+        <option value="5">May</option>
+        <option value="6">June</option>
+        <option value="7">July</option>
+        <option value="8">August</option>
+        <option value="9">September</option>
+        <option value="10">October</option>
+        <option value="11">November</option>
+        <option value="12">December</option>
+      </select>
+    </div>
+    <button type="submit" class="btn-primary">Create period</button>
+  </form>
+</div>
+
+<div class="section-card coa-section">
+  <div class="section-header">
+    <h2 class="section-title">All periods</h2>
+    <span class="coa-count">{{ periods | length }} total</span>
+  </div>
+  {% if periods %}
+  <table class="entries-table">
+    <thead>
+      <tr>
+        <th>Period</th>
+        <th>Dates</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in periods %}
+      <tr>
+        <td>{{ p.period_start.strftime("%B %Y") }}</td>
+        <td class="coa-subcategory">
+          {{ p.period_start.strftime("%Y-%m-%d") }} → {{ p.period_end.strftime("%Y-%m-%d") }}
+        </td>
+        <td>
+          <span class="period-badge period-badge--{{ p.status }}">
+            {{ p.status.replace('_', ' ') | capitalize }}
+          </span>
+        </td>
+        <td class="coa-subcategory">{{ p.created_at.strftime("%Y-%m-%d") }}</td>
+        <td>
+          <a href="/periods/{{ p.period_id }}" class="section-action">View →</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">
+    <span class="empty-icon">&#9632;</span>
+    <p>No periods yet.</p>
+    <p class="empty-hint">Create your first accounting period above to begin.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

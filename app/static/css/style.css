@@ -229,6 +229,16 @@ body {
   color: #16a34a;
 }
 
+.period-badge--pending_review {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.period-badge--pending_close {
+  background: #fed7aa;
+  color: #9a3412;
+}
+
 .period-badge--closed {
   background: #f1f5f9;
   color: #64748b;
@@ -375,7 +385,6 @@ body {
 
 .btn-primary {
   display: inline-block;
-  margin-top: 8px;
   padding: 9px 20px;
   background: var(--accent);
   color: #ffffff;
@@ -573,4 +582,112 @@ body {
 
 [data-theme="dark"] .coa-badge--credit {
   color: #34d399;
+}
+
+/* ── Period form & detail ── */
+
+.period-form {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px;
+}
+
+.period-form-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+.period-form-fields {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.period-form-input,
+.period-form-select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13.5px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+
+.period-form-input {
+  width: 80px;
+}
+
+.period-form-input:focus,
+.period-form-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.period-detail-body {
+  padding: 20px 24px;
+}
+
+.inline-form {
+  display: inline-block;
+}
+
+.btn-secondary {
+  display: inline-block;
+  padding: 9px 20px;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-secondary:hover {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.btn-danger {
+  display: inline-block;
+  padding: 9px 20px;
+  background: transparent;
+  color: #dc2626;
+  border: 1px solid #dc2626;
+  border-radius: 6px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-danger:hover {
+  background: #dc2626;
+  color: #ffffff;
+}
+
+.error-banner {
+  padding: 14px 20px;
+  margin-bottom: 20px;
+  border-left: 3px solid #dc2626;
+  color: #dc2626;
+  font-size: 13.5px;
+}
+
+/* ── Dashboard period actions ── */
+
+.dashboard-period-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
