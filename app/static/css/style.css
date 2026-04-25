@@ -691,3 +691,29 @@ body {
   gap: 8px;
   margin-top: 8px;
 }
+
+/* ── Period detail: balance grid + upload form ── */
+
+.balance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px 24px;
+}
+
+.balance-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.balance-row .period-form-input {
+  width: 120px;
+  text-align: right;
+}
+
+/* The compact 80px width for period-form-input is meant for the year/month
+ * fields in the create form. The document upload form needs roomier inputs. */
+.period-detail-body form[enctype="multipart/form-data"] .period-form-input {
+  width: auto;
+}

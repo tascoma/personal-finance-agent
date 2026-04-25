@@ -64,10 +64,112 @@
   <div class="section-header">
     <h2 class="section-title">Documents</h2>
   </div>
+
+  {% if period.status == 'open' %}
+  <div class="period-detail-body">
+    <form method="post" action="/periods/{{ period.period_id }}/documents"
+          enctype="multipart/form-data" class="inline-form" style="flex-wrap: wrap; gap: 8px;">
+      <select name="document_type" required class="period-form-input">
+        <option value="paystub">Paystub</option>
+        <option value="bank_statement">Bank Statement</option>
+        <option value="credit_card">Credit Card</option>
+        <option value="investment">Investment</option>
+        <option value="manual">Manual</option>
+      </select>
+      <select name="source_account_code" class="period-form-input">
+        <option value="">— source account (optional) —</option>
+        {% for acct in accounts %}
+        <option value="{{ acct.account_code }}">
+          {{ acct.account_code }} · {{ acct.account_name }}
+        </option>
+        {% endfor %}
+      </select>
+      <input type="file" name="file" accept=".pdf,.csv,.xlsx" required class="period-form-input" />
+      <button type="submit" class="btn-primary">Upload</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {% if documents %}
+  <table class="entries-table">
+    <thead>
+      <tr>
+        <th>File</th>
+        <th>Type</th>
+        <th>Source account</th>
+        <th>Status</th>
+        <th>Uploaded</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for doc in documents %}
+      <tr>
+        <td>{{ doc.file_name }}</td>
+        <td>{{ doc.document_type.replace('_', ' ') }}</td>
+        <td>{{ doc.source_account_code or '—' }}</td>
+        <td>{{ doc.parse_status }}</td>
+        <td>{{ doc.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>
+          <form method="post"
+                action="/periods/{{ period.period_id }}/documents/{{ doc.document_id }}/delete"
+                class="inline-form"
+                onsubmit="return confirm('Delete this document?');">
+            <button type="submit" class="btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
   <div class="empty-state">
     <span class="empty-icon">&#9776;</span>
     <p>No documents uploaded yet.</p>
-    <p class="empty-hint">Document upload lands in the next phase.</p>
+    {% if period.status == 'open' %}
+    <p class="empty-hint">Upload PDFs, CSVs, or XLSX files using the form above.</p>
+    {% else %}
+    <p class="empty-hint">This period is no longer open for uploads.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="section-card">
+  <div class="section-header">
+    <h2 class="section-title">Month-end Balances</h2>
+  </div>
+  <div class="period-detail-body">
+    {% if balance_accounts %}
+    <form method="post" action="/periods/{{ period.period_id }}/balances">
+      <div class="balance-grid">
+        {% for acct in balance_accounts %}
+        <div class="balance-row">
+          <label for="balance-{{ acct.account_code }}" class="period-form-label">
+            {{ acct.account_code }} · {{ acct.account_name }}
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            id="balance-{{ acct.account_code }}"
+            name="{{ acct.account_code }}"
+            value="{{ stated_balances.get(acct.account_code, '') }}"
+            placeholder="0.00"
+            class="period-form-input"
+            {% if period.status != 'open' %}disabled{% endif %}
+          />
+        </div>
+        {% endfor %}
+      </div>
+      {% if period.status == 'open' %}
+      <div style="margin-top: 16px;">
+        <button type="submit" class="btn-primary">Save balances</button>
+      </div>
+      {% endif %}
+    </form>
+    {% else %}
+    <p class="page-subtitle">No balance-sheet accounts configured.</p>
+    {% endif %}
   </div>
 </div>
 
