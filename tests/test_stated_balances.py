@@ -1,0 +1,204 @@
+"""Tests for the StatedBalance resource — service + HTTP routes."""
+
+from decimal import Decimal
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from app.databases import Base
+from app.dependencies import get_db_session
+from app.main import app
+from app.models.account import Account
+from app.models.stated_balance import StatedBalance
+from app.services import period as period_service
+from app.services import stated_balance as stated_balance_service
+
+TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest_asyncio.fixture
+async def session_factory():
+    eng = create_async_engine(TEST_DB_URL, echo=False)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    async with factory() as session:
+        session.add_all(
+            [
+                Account(
+                    account_code=100101,
+                    account_name="Checking",
+                    account_type="Asset",
+                    sub_category="Cash",
+                    normal_balance="debit",
+                    is_memo=False,
+                    is_active=True,
+                ),
+                Account(
+                    account_code=200101,
+                    account_name="Credit Card",
+                    account_type="Liability",
+                    sub_category="Credit Cards",
+                    normal_balance="credit",
+                    is_memo=False,
+                    is_active=True,
+                ),
+                Account(
+                    account_code=400101,
+                    account_name="Salary",
+                    account_type="Income",
+                    sub_category="Earned",
+                    normal_balance="credit",
+                    is_memo=False,
+                    is_active=True,
+                ),
+                Account(
+                    account_code=112102,
+                    account_name="RSUs Unvested",
+                    account_type="Memo Asset*",
+                    sub_category="Equity",
+                    normal_balance="debit",
+                    is_memo=True,
+                    is_active=True,
+                ),
+            ]
+        )
+        await session.commit()
+    yield factory
+    await eng.dispose()
+
+
+@pytest_asyncio.fixture
+async def client(session_factory):
+    async def override_get_db_session():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", follow_redirects=True
+    ) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def open_period(session_factory):
+    async with session_factory() as session:
+        period = await period_service.create_period(session, 2026, 4)
+    return period
+
+
+# ── Service-level tests ──────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_list_balance_accounts_filters_to_assets_and_liabilities(
+    session_factory,
+):
+    async with session_factory() as session:
+        accounts = await stated_balance_service.list_balance_accounts(session)
+    codes = {a.account_code for a in accounts}
+    assert codes == {100101, 200101}  # Income excluded; memo excluded
+
+
+@pytest.mark.asyncio
+async def test_upsert_creates_balance(session_factory, open_period):
+    async with session_factory() as session:
+        balance = await stated_balance_service.upsert_balance(
+            session,
+            period_id=open_period.period_id,
+            account_code=100101,
+            stated_balance=Decimal("1234.56"),
+        )
+    assert balance.stated_balance == Decimal("1234.56")
+
+    async with session_factory() as session:
+        rows = await session.scalars(select(StatedBalance))
+        assert len(list(rows)) == 1
+
+
+@pytest.mark.asyncio
+async def test_upsert_updates_existing_balance(session_factory, open_period):
+    async with session_factory() as session:
+        await stated_balance_service.upsert_balance(
+            session,
+            period_id=open_period.period_id,
+            account_code=100101,
+            stated_balance=Decimal("100.00"),
+        )
+        await stated_balance_service.upsert_balance(
+            session,
+            period_id=open_period.period_id,
+            account_code=100101,
+            stated_balance=Decimal("250.00"),
+        )
+
+    async with session_factory() as session:
+        rows = (await session.scalars(select(StatedBalance))).all()
+    assert len(rows) == 1
+    assert rows[0].stated_balance == Decimal("250.00")
+
+
+@pytest.mark.asyncio
+async def test_upsert_blocked_on_non_open_period(session_factory, open_period):
+    async with session_factory() as session:
+        await period_service.update_status(
+            session, open_period.period_id, "pending_review"
+        )
+
+    async with session_factory() as session:
+        with pytest.raises(stated_balance_service.BalanceError):
+            await stated_balance_service.upsert_balance(
+                session,
+                period_id=open_period.period_id,
+                account_code=100101,
+                stated_balance=Decimal("1.00"),
+            )
+
+
+# ── HTTP route tests ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_post_balances_form(client: AsyncClient, session_factory, open_period):
+    response = await client.post(
+        f"/periods/{open_period.period_id}/balances",
+        data={"100101": "999.99", "200101": "", "400101": "5000.00"},
+    )
+    assert response.status_code == 200
+
+    async with session_factory() as session:
+        rows = (await session.scalars(select(StatedBalance))).all()
+    by_code = {r.account_code: r.stated_balance for r in rows}
+    assert by_code == {100101: Decimal("999.99")}  # 200101 empty, 400101 ignored (Income)
+
+
+@pytest.mark.asyncio
+async def test_balance_form_renders_existing_values(
+    client: AsyncClient, open_period
+):
+    await client.post(
+        f"/periods/{open_period.period_id}/balances",
+        data={"100101": "777.77"},
+    )
+    response = await client.get(f"/periods/{open_period.period_id}")
+    assert response.status_code == 200
+    assert 'name="100101"' in response.text
+    assert "777.77" in response.text
+
+
+@pytest.mark.asyncio
+async def test_balance_form_invalid_amount_shows_error(
+    client: AsyncClient, open_period
+):
+    response = await client.post(
+        f"/periods/{open_period.period_id}/balances",
+        data={"100101": "not-a-number"},
+    )
+    assert response.status_code == 200
+    assert "Invalid amount" in response.text
