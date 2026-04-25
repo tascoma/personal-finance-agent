@@ -528,3 +528,49 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Chart of Accounts ── */
+
+.coa-section {
+  margin-bottom: 24px;
+}
+
+.coa-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.coa-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: var(--text-secondary);
+  width: 80px;
+}
+
+.coa-subcategory {
+  color: var(--text-secondary);
+  font-size: 13.5px;
+}
+
+.coa-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.coa-badge--debit {
+  background: rgba(0, 119, 182, 0.12);
+  color: var(--accent);
+}
+
+.coa-badge--credit {
+  background: rgba(0, 180, 100, 0.12);
+  color: #0a7a45;
+}
+
+[data-theme="dark"] .coa-badge--credit {
+  color: #34d399;
+}

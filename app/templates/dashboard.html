@@ -41,41 +41,10 @@
 </div>
 
 <div class="section-card">
-  <div class="section-header">
-    <h2 class="section-title">Recent Journal Entries</h2>
-    <a href="#" class="section-action">View all &#8594;</a>
-  </div>
-
-  {% if recent_entries %}
-  <table class="entries-table">
-    <thead>
-      <tr>
-        <th>Date</th>
-        <th>Description</th>
-        <th>Debit</th>
-        <th>Credit</th>
-        <th>Account</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for entry in recent_entries %}
-      <tr>
-        <td>{{ entry.date }}</td>
-        <td>{{ entry.description }}</td>
-        <td>{{ "$%.2f" | format(entry.debit) if entry.debit else "—" }}</td>
-        <td>{{ "$%.2f" | format(entry.credit) if entry.credit else "—" }}</td>
-        <td>{{ entry.account }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
   <div class="empty-state">
     <span class="empty-icon">&#9783;</span>
-    <p>No journal entries yet.</p>
-    <p class="empty-hint">Upload a document to generate entries automatically.</p>
-    <a href="#" class="btn-primary">Upload Document</a>
+    <p>No data yet.</p>
+    <p class="empty-hint">Select a period and upload documents to get started.</p>
   </div>
-  {% endif %}
 </div>
 {% endblock %}

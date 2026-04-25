@@ -16,6 +16,5 @@ async def dashboard(request: Request) -> HTMLResponse:
             "net_income": 0.00,
             "total_assets": 0.00,
         },
-        "recent_entries": [],
     }
     return templates.TemplateResponse(request, "dashboard.html", context)

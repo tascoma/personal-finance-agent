@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% set active_page = "accounts" %}
+
+{% block title %}Chart of Accounts — Personal Finance Agent{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Chart of Accounts</h1>
+  <p class="page-subtitle">All active accounts across your personal ledger</p>
+</div>
+
+{% set type_labels = {
+  "Asset":       "Assets",
+  "Liability":   "Liabilities",
+  "Equity":      "Equity",
+  "Income":      "Income",
+  "Expense":     "Expenses",
+  "Memo Asset*": "Memo (Off-Balance-Sheet)"
+} %}
+
+{% for acct_type in type_order %}
+  {% set accounts = grouped[acct_type] %}
+  {% if accounts %}
+  <div class="section-card coa-section">
+    <div class="section-header">
+      <h2 class="section-title">{{ type_labels[acct_type] }}</h2>
+      <span class="coa-count">{{ accounts | length }} accounts</span>
+    </div>
+    <table class="entries-table">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Account Name</th>
+          <th>Sub-Category</th>
+          <th>Normal Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for acct in accounts %}
+        <tr>
+          <td class="coa-code">{{ acct.account_code }}</td>
+          <td>{{ acct.account_name }}</td>
+          <td class="coa-subcategory">{{ acct.sub_category }}</td>
+          <td>
+            <span class="coa-badge coa-badge--{{ acct.normal_balance }}">
+              {{ acct.normal_balance | capitalize }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+{% endfor %}
+{% endblock %}
