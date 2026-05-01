@@ -1,0 +1,620 @@
+{% extends "base.html" %}
+{% set active_page = "journal" %}
+
+{% block title %}Journal — {{ period.period_start.strftime("%B %Y") }}{% endblock %}
+
+{% block sidebar_period %}
+<div class="sidebar-period">
+  <a href="/periods/{{ period.period_id }}" class="sidebar-period-inner">
+    <div class="sidebar-period-eyebrow">Active Period</div>
+    <div class="sidebar-period-label">{{ period.period_start.strftime("%B %Y") }}</div>
+    <div class="sidebar-period-status">
+      <span class="status-dot status-dot--{{ period.status }}"></span>
+      {{ period.status.replace('_', ' ') | capitalize }}
+    </div>
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <a href="/periods/{{ period.period_id }}" class="page-header-back">
+      <svg width="12" height="12" class="icon"><use href="#ic-back"/></svg>
+      {{ period.period_start.strftime("%B %Y") }}
+    </a>
+    <div class="page-title-row">
+      <h1>Ledger</h1>
+      <span class="badge badge--{{ period.status }}">{{ period.status.replace('_', ' ') | capitalize }}</span>
+    </div>
+    <p class="page-subtitle">{{ period.period_start.strftime("%B %Y") }} · Classify transactions and post to the ledger</p>
+  </div>
+  <div class="page-header-right">
+    {% if period.status == 'pending_close' and has_unclassified %}
+    <form method="post" action="/periods/{{ period.period_id }}/classify" class="inline-form">
+      <button type="submit" class="btn btn-secondary btn-sm">
+        <svg width="13" height="13" class="icon"><use href="#ic-brain"/></svg>
+        Classify with AI
+      </button>
+    </form>
+    {% endif %}
+    {% if period.status == 'pending_close' and approved %}
+    <form method="post" action="/periods/{{ period.period_id }}/post" class="inline-form">
+      <button type="submit" class="btn btn-primary btn-sm">Post All Approved →</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Stepper -->
+{% set step_idx = {'open': 0, 'pending_review': 1, 'pending_close': 2, 'closed': 3}[period.status] | default(0) %}
+<div class="stepper">
+  {% for step in [('Input', 'Upload & configure'), ('Parse', 'Extract & validate'), ('Journal', 'Classify & post'), ('Close', 'Reconcile & lock')] %}
+  {% set i = loop.index0 %}
+  <div class="step {% if i < step_idx %}step--done{% elif i == step_idx %}step--active{% endif %}">
+    <div class="step-circle {% if i < step_idx %}step-circle--done{% elif i == step_idx %}step-circle--active{% else %}step-circle--pending{% endif %}">
+      {% if i < step_idx %}
+        <svg width="13" height="13" class="icon"><use href="#ic-check"/></svg>
+      {% else %}{{ i + 1 }}{% endif %}
+    </div>
+    <div>
+      <div class="step-label">{{ step[0] }}</div>
+      <div class="step-sub">{{ step[1] }}</div>
+    </div>
+    {% if i == step_idx %}<div class="step-dot"></div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{% if error %}
+<div class="banner banner--red">
+  <svg width="15" height="15" class="icon"><use href="#ic-alert"/></svg>
+  {{ error }}
+</div>
+{% endif %}
+
+{% if docs_missing_source %}
+<div class="banner banner--amber" style="flex-direction:column;align-items:flex-start;gap:10px;">
+  <div style="display:flex;align-items:center;gap:8px;">
+    <svg width="15" height="15" class="icon"><use href="#ic-alert"/></svg>
+    <strong>{{ docs_missing_source | length }} document{{ 's' if docs_missing_source | length > 1 }} missing a deposit account</strong>
+    — set the account that receives net proceeds before posting.
+  </div>
+  {% for doc in docs_missing_source %}
+  <form method="post"
+        action="/periods/{{ period.period_id }}/documents/{{ doc.document_id }}/source-account"
+        class="inline-form" style="gap:6px;width:100%;">
+    <span style="font-size:12.5px;color:var(--text-2);min-width:180px;">{{ doc.file_name }}</span>
+    <select name="source_account_code" class="inp" style="font-size:12px;padding:4px 8px;min-width:220px;" required>
+      <option value="">— select account —</option>
+      {% for acct in accounts %}
+      <option value="{{ acct.account_code }}">{{ acct.account_code }} · {{ acct.account_name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary btn-sm" style="padding:4px 10px;font-size:11px;">Save</button>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Tab nav -->
+<div class="tabs">
+  <button class="tab-btn tab-btn--active" data-tab="staged" onclick="switchTab('staged', this)">
+    Staged <span class="color-amber mono" style="font-size:12px;margin-left:4px;">{{ staged | length }}</span>
+  </button>
+  <button class="tab-btn" data-tab="approved" onclick="switchTab('approved', this)">
+    Approved <span class="color-green mono" style="font-size:12px;margin-left:4px;">{{ approved | length }}</span>
+  </button>
+  <button class="tab-btn" data-tab="posted" onclick="switchTab('posted', this)">
+    Posted <span class="color-accent mono" style="font-size:12px;margin-left:4px;">{{ entries | length }}</span>
+  </button>
+</div>
+
+<!-- ── Staged ── -->
+<div id="tab-staged">
+  <div class="card">
+    <div class="card-hd">
+      <div>
+        <div class="card-title">Staged Transactions</div>
+        <div class="card-sub">Awaiting review and approval</div>
+      </div>
+      <div class="card-hd-right" style="display:flex;align-items:center;gap:12px;">
+        {% set flagged_count = staged | selectattr('is_flagged') | list | length %}
+        {% if flagged_count > 0 %}
+        <span style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--amber);">
+          <svg width="13" height="13" class="icon"><use href="#ic-alert"/></svg>
+          {{ flagged_count }} flagged
+        </span>
+        {% endif %}
+        {% if period.status == 'pending_close' and staged %}
+        <form method="post" action="/periods/{{ period.period_id }}/transactions/approve-all-staged"
+              class="inline-form">
+          <button type="submit" class="btn btn-primary btn-sm">Approve All</button>
+        </form>
+        <form method="post" action="/periods/{{ period.period_id }}/transactions/reject-all-staged"
+              class="inline-form"
+              onsubmit="return confirm('Delete all {{ staged | length }} staged transaction(s)? This cannot be undone.');">
+          <button type="submit" class="btn btn-danger btn-sm">Reject All</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if staged %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th class="text-right">Amount</th>
+          <th>Suggested Account</th>
+          <th>Confidence</th>
+          {% if period.status == 'pending_close' %}<th></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for txn in staged %}
+        <tr style="{% if txn.is_flagged %}background:rgba(251,191,36,0.04);{% endif %}">
+          <td class="mono color-text3" style="font-size:12.5px;">{{ txn.txn_date.strftime("%Y-%m-%d") }}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px;">
+              {% if txn.is_flagged %}
+                <svg width="13" height="13" class="icon color-amber"><use href="#ic-alert"/></svg>
+              {% endif %}
+              <span style="font-size:13px;">{{ txn.description }}</span>
+              {% if txn.is_duplicate %}
+                <span class="color-text3" style="font-size:11px;">(dup)</span>
+              {% endif %}
+            </div>
+          </td>
+          <td class="mono text-right fw-600" style="font-size:13.5px;color:{% if txn.amount < 0 %}var(--red){% else %}var(--green){% endif %};">
+            {% if txn.amount < 0 %}−${{ "%.2f" | format(txn.amount | abs) }}{% else %}${{ "%.2f" | format(txn.amount) }}{% endif %}
+          </td>
+          <td>
+            {% if period.status == 'pending_close' %}
+            <form method="post"
+                  action="/periods/{{ period.period_id }}/transactions/{{ txn.raw_txn_id }}/account"
+                  class="inline-form" style="gap:4px;">
+              <select name="account_code" class="inp" style="font-size:12px;padding:4px 8px;min-width:200px;">
+                <option value="">— unclassified —</option>
+                {% for acct in accounts %}
+                <option value="{{ acct.account_code }}"
+                  {% if txn.suggested_account_code == acct.account_code %}selected{% endif %}>
+                  {{ acct.account_code }} · {{ acct.account_name }}
+                </option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-secondary btn-sm" style="padding:4px 8px;font-size:11px;">Save</button>
+            </form>
+            {% else %}
+              {% if txn.suggested_account_code %}
+              {% set acct = accounts_by_code.get(txn.suggested_account_code) %}
+              <span class="mono color-text2" style="font-size:12.5px;">
+                {{ txn.suggested_account_code }}{% if acct %} · {{ acct.account_name }}{% endif %}
+              </span>
+              {% else %}
+              <span class="color-text3" style="font-style:italic;font-size:12px;">Unclassified</span>
+              {% endif %}
+            {% endif %}
+          </td>
+          <td>
+            {% if txn.classifier_confidence is not none and txn.classifier_confidence > 0 %}
+            {% set conf = txn.classifier_confidence %}
+            {% set conf_color = 'var(--green)' if conf >= 0.85 else ('var(--amber)' if conf >= 0.6 else 'var(--red)') %}
+            <span class="conf-pill">
+              <span class="conf-pct" style="color:{{ conf_color }};">{{ "%.0f" | format(conf * 100) }}%</span>
+              <span class="conf-bar-bg"><span class="conf-bar-fill" style="width:{{ "%.0f" | format(conf * 100) }}%;background:{{ conf_color }};"></span></span>
+            </span>
+            {% else %}<span class="color-text3" style="font-size:12px;">—</span>{% endif %}
+          </td>
+          {% if period.status == 'pending_close' %}
+          <td>
+            <div style="display:flex;gap:6px;">
+              <form method="post"
+                    action="/periods/{{ period.period_id }}/transactions/{{ txn.raw_txn_id }}/approve"
+                    class="inline-form">
+                <button type="submit" class="btn btn-primary btn-sm">Approve</button>
+              </form>
+              <form method="post"
+                    action="/periods/{{ period.period_id }}/transactions/{{ txn.raw_txn_id }}/reject"
+                    class="inline-form">
+                <button type="submit" class="btn btn-danger btn-sm">Reject</button>
+              </form>
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">
+        <svg width="18" height="18" class="icon"><use href="#ic-check"/></svg>
+      </div>
+      <p class="empty-msg">No staged transactions.</p>
+      <p class="empty-hint">All transactions have been approved, rejected, or posted.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if period.status in ('open', 'pending_close') %}
+  <div class="card mt-12">
+    <div class="card-hd">
+      <div class="card-title">Add Manual Entry</div>
+    </div>
+    <div class="card-bd-sm">
+      <form method="post" action="/periods/{{ period.period_id }}/transactions"
+            class="form-row" style="align-items:flex-end;flex-wrap:wrap;gap:8px;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label class="form-label">Date</label>
+          <input type="date" name="txn_date" required class="inp" style="width:140px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:180px;">
+          <label class="form-label">Description</label>
+          <input type="text" name="description" required class="inp" placeholder="e.g. Mortgage cash payment">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label class="form-label">Amount</label>
+          <input type="number" name="amount" required step="0.01" class="inp mono" style="width:120px;"
+                 placeholder="-2738.83">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label class="form-label">Account</label>
+          <select name="account_code" required class="inp" style="width:220px;">
+            <option value="">— account —</option>
+            {% for acct in accounts %}
+            <option value="{{ acct.account_code }}">{{ acct.account_code }} · {{ acct.account_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-top:20px;">Add</button>
+      </form>
+      <p class="color-text3" style="font-size:11.5px;margin-top:8px;">
+        <strong>Negative amount</strong>: outflow (e.g. a payment). &nbsp;
+        <strong>Positive amount</strong>: inflow (e.g. a deposit). &nbsp;
+        Set the source account on the document in the banner above before posting.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Approved ── -->
+<div id="tab-approved" style="display:none;">
+  <div class="card">
+    <div class="card-hd">
+      <div>
+        <div class="card-title">Approved Transactions</div>
+        <div class="card-sub">Ready to post to the ledger</div>
+      </div>
+      {% if period.status == 'pending_close' and approved %}
+      <div style="display:flex;gap:8px;">
+        <form method="post" action="/periods/{{ period.period_id }}/transactions/unapprove-all" class="inline-form">
+          <button type="submit" class="btn btn-ghost btn-sm">Undo All</button>
+        </form>
+        <form method="post" action="/periods/{{ period.period_id }}/post" class="inline-form">
+          <button type="submit" class="btn btn-primary btn-sm">Post All →</button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if approved %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th class="text-right">Amount</th>
+          <th>Account</th>
+          <th>Confidence</th>
+          {% if period.status == 'pending_close' %}<th></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for txn in approved %}
+        <tr>
+          <td class="mono color-text3" style="font-size:12.5px;">{{ txn.txn_date.strftime("%Y-%m-%d") }}</td>
+          <td style="font-size:13px;">{{ txn.description }}</td>
+          <td class="mono text-right fw-600" style="font-size:13.5px;color:{% if txn.amount < 0 %}var(--red){% else %}var(--green){% endif %};">
+            {% if txn.amount < 0 %}−${{ "%.2f" | format(txn.amount | abs) }}{% else %}${{ "%.2f" | format(txn.amount) }}{% endif %}
+          </td>
+          <td class="mono color-text2" style="font-size:12.5px;">
+            {% if txn.suggested_account_code %}
+            {% set acct = accounts_by_code.get(txn.suggested_account_code) %}
+            {{ txn.suggested_account_code }}{% if acct %} · {{ acct.account_name }}{% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if txn.classifier_confidence is not none and txn.classifier_confidence > 0 %}
+            {% set conf = txn.classifier_confidence %}
+            {% set conf_color = 'var(--green)' if conf >= 0.85 else ('var(--amber)' if conf >= 0.6 else 'var(--red)') %}
+            <span class="conf-pill">
+              <span class="conf-pct" style="color:{{ conf_color }};">{{ "%.0f" | format(conf * 100) }}%</span>
+              <span class="conf-bar-bg"><span class="conf-bar-fill" style="width:{{ "%.0f" | format(conf * 100) }}%;background:{{ conf_color }};"></span></span>
+            </span>
+            {% else %}<span class="color-text3" style="font-size:12px;">—</span>{% endif %}
+          </td>
+          {% if period.status == 'pending_close' %}
+          <td>
+            <form method="post"
+                  action="/periods/{{ period.period_id }}/transactions/{{ txn.raw_txn_id }}/unapprove"
+                  class="inline-form">
+              <button type="submit" class="btn btn-ghost btn-sm">Undo</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">
+        <svg width="18" height="18" class="icon"><use href="#ic-journal"/></svg>
+      </div>
+      <p class="empty-msg">Nothing approved yet.</p>
+      <p class="empty-hint">Approve staged transactions, then post them to the ledger.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Posted entries ── -->
+<div id="tab-posted" style="display:none;">
+  {% if entries %}
+  <div style="display:flex;flex-direction:column;gap:12px;">
+    {% for entry in entries %}
+    <div class="card">
+      <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <span style="font-weight:600;font-size:13.5px;">{{ entry.description }}</span>
+          <span class="mono color-text3" style="font-size:12px;margin-left:12px;">{{ entry.entry_date.strftime("%Y-%m-%d") }}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="badge badge--parsed">{{ entry.source_type }}</span>
+          {% if period.status != 'closed' %}
+          <form method="post"
+                action="/periods/{{ period.period_id }}/journal/entries/{{ entry.entry_id }}/delete"
+                class="inline-form"
+                onsubmit="return confirm('Delete this entry?');">
+            <button type="submit" class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:11px;color:var(--red);">
+              <svg width="12" height="12" class="icon"><use href="#ic-trash"/></svg>
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% set entry_lines = lines_by_entry.get(entry.entry_id, []) %}
+      {% if entry_lines %}
+      <table class="data-table" style="table-layout:fixed;">
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Memo</th>
+            <th class="text-right" style="width:130px;">Debit</th>
+            <th class="text-right" style="width:130px;">Credit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in entry_lines %}
+          <tr>
+            <td class="mono" style="font-size:13px;">
+              {{ line.account_code }}{% set acct = accounts_by_code.get(line.account_code) %}{% if acct %} · {{ acct.account_name }}{% endif %}
+            </td>
+            <td class="color-text3" style="font-size:12px;">{{ line.memo or '' }}</td>
+            <td class="mono text-right" style="color:{% if line.debit_amount > 0 %}var(--text-1){% else %}var(--text-3){% endif %};">
+              {% if line.debit_amount > 0 %}${{ "%.2f" | format(line.debit_amount) }}{% else %}—{% endif %}
+            </td>
+            <td class="mono text-right" style="color:{% if line.credit_amount > 0 %}var(--text-1){% else %}var(--text-3){% endif %};">
+              {% if line.credit_amount > 0 %}${{ "%.2f" | format(line.credit_amount) }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="color-text3" style="font-size:12px;" colspan="2">Total</td>
+            <td class="mono text-right fw-600">${{ "%.2f" | format(entry_lines | sum(attribute='debit_amount')) }}</td>
+            <td class="mono text-right fw-600">${{ "%.2f" | format(entry_lines | sum(attribute='credit_amount')) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card">
+    <div class="empty-state">
+      <div class="empty-icon">
+        <svg width="18" height="18" class="icon"><use href="#ic-statements"/></svg>
+      </div>
+      <p class="empty-msg">No entries posted yet.</p>
+      <p class="empty-hint">Approve transactions and click Post All to create journal entries.</p>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if period.status != 'closed' %}
+  <div class="card mt-12">
+    <div class="card-hd">
+      <div>
+        <div class="card-title">New Manual Journal Entry</div>
+        <div class="card-sub">Directly post a balanced debit/credit entry — useful for adjustments, accruals, or closing entries</div>
+      </div>
+    </div>
+    <div class="card-bd-sm">
+      <form method="post" action="/periods/{{ period.period_id }}/journal/entries" id="manual-entry-form">
+        <div class="form-row" style="align-items:flex-end;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <label class="form-label">Date</label>
+            <input type="date" name="entry_date" required class="inp" style="width:140px;">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:220px;">
+            <label class="form-label">Description</label>
+            <input type="text" name="description" required class="inp" placeholder="e.g. Depreciation — December">
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <label class="form-label">Type</label>
+            <select name="source_type" class="inp" style="width:140px;">
+              <option value="manual">Manual</option>
+              <option value="adjusting">Adjusting</option>
+              <option value="closing">Closing</option>
+            </select>
+          </div>
+        </div>
+
+        <table class="data-table" id="entry-lines-table" style="margin-bottom:8px;">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th style="width:110px;">Debit ($)</th>
+              <th style="width:110px;">Credit ($)</th>
+              <th style="width:200px;">Memo</th>
+              <th style="width:36px;"></th>
+            </tr>
+          </thead>
+          <tbody id="entry-lines-body">
+            <!-- rows injected by JS -->
+          </tbody>
+        </table>
+
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="addEntryLine()">
+            <svg width="12" height="12" class="icon"><use href="#ic-plus"/></svg>
+            Add Line
+          </button>
+          <span id="balance-indicator" style="font-size:12px;font-family:var(--font-mono);color:var(--text-3);"></span>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-sm">Post Entry</button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    var accounts = [
+      {% for acct in accounts %}
+      { code: {{ acct.account_code }}, name: {{ acct.account_name | tojson }} },
+      {% endfor %}
+    ];
+
+    function buildSelect(name) {
+      var sel = document.createElement('select');
+      sel.name = name;
+      sel.required = true;
+      sel.className = 'inp';
+      sel.style.cssText = 'font-size:12px;padding:4px 8px;width:100%;';
+      var blank = document.createElement('option');
+      blank.value = '';
+      blank.textContent = '— account —';
+      sel.appendChild(blank);
+      accounts.forEach(function (a) {
+        var opt = document.createElement('option');
+        opt.value = a.code;
+        opt.textContent = a.code + ' · ' + a.name;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener('change', updateBalance);
+      return sel;
+    }
+
+    function buildAmountInput(name, placeholder) {
+      var inp = document.createElement('input');
+      inp.type = 'number';
+      inp.name = name;
+      inp.step = '0.01';
+      inp.min = '0';
+      inp.value = '';
+      inp.placeholder = placeholder;
+      inp.className = 'inp mono';
+      inp.style.cssText = 'font-size:12px;padding:4px 8px;width:100%;';
+      inp.addEventListener('input', updateBalance);
+      return inp;
+    }
+
+    function addEntryLine() {
+      var tbody = document.getElementById('entry-lines-body');
+      var tr = document.createElement('tr');
+
+      var tdAcct = document.createElement('td');
+      tdAcct.appendChild(buildSelect('account_code'));
+      tr.appendChild(tdAcct);
+
+      var tdDr = document.createElement('td');
+      tdDr.appendChild(buildAmountInput('debit', '0.00'));
+      tr.appendChild(tdDr);
+
+      var tdCr = document.createElement('td');
+      tdCr.appendChild(buildAmountInput('credit', '0.00'));
+      tr.appendChild(tdCr);
+
+      var tdMemo = document.createElement('td');
+      var memoInp = document.createElement('input');
+      memoInp.type = 'text';
+      memoInp.name = 'memo';
+      memoInp.className = 'inp';
+      memoInp.style.cssText = 'font-size:12px;padding:4px 8px;width:100%;';
+      tdMemo.appendChild(memoInp);
+      tr.appendChild(tdMemo);
+
+      var tdDel = document.createElement('td');
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-ghost btn-sm';
+      btn.style.cssText = 'padding:3px 7px;color:var(--red);';
+      btn.innerHTML = '<svg width="12" height="12" class="icon"><use href="#ic-x"/></svg>';
+      btn.addEventListener('click', function () {
+        tbody.removeChild(tr);
+        updateBalance();
+      });
+      tdDel.appendChild(btn);
+      tr.appendChild(tdDel);
+
+      tbody.appendChild(tr);
+      updateBalance();
+    }
+
+    function updateBalance() {
+      var debits = Array.from(document.querySelectorAll('#entry-lines-body input[name="debit"]'))
+        .reduce(function (s, el) { return s + (parseFloat(el.value) || 0); }, 0);
+      var credits = Array.from(document.querySelectorAll('#entry-lines-body input[name="credit"]'))
+        .reduce(function (s, el) { return s + (parseFloat(el.value) || 0); }, 0);
+      var ind = document.getElementById('balance-indicator');
+      var diff = Math.abs(debits - credits);
+      if (debits === 0 && credits === 0) {
+        ind.textContent = '';
+      } else if (diff < 0.005) {
+        ind.textContent = 'Balanced ✓';
+        ind.style.color = 'var(--green)';
+      } else {
+        ind.textContent = 'Out of balance by $' + diff.toFixed(2);
+        ind.style.color = 'var(--red)';
+      }
+    }
+
+    // Seed two blank lines on load
+    addEntryLine();
+    addEntryLine();
+    window.addEntryLine = addEntryLine;
+  })();
+  </script>
+  {% endif %}
+</div>
+
+<script>
+  function switchTab(name, btn) {
+    ['staged', 'approved', 'posted'].forEach(function(t) {
+      document.getElementById('tab-' + t).style.display = 'none';
+    });
+    document.querySelectorAll('.tab-btn').forEach(function(b) {
+      b.classList.remove('tab-btn--active');
+    });
+    document.getElementById('tab-' + name).style.display = 'block';
+    btn.classList.add('tab-btn--active');
+  }
+</script>
+{% endblock %}

@@ -41,6 +41,17 @@ def next_status(current: str) -> str | None:
     return _STATUS_ORDER[idx + 1]
 
 
+def prev_status(current: str) -> str | None:
+    """Return the previous status in the lifecycle, or None if already at the start."""
+    try:
+        idx = _STATUS_ORDER.index(current)
+    except ValueError:
+        return None
+    if idx == 0:
+        return None
+    return _STATUS_ORDER[idx - 1]
+
+
 class PeriodError(Exception):
     """Raised for invalid period operations (bad input, conflicts, illegal transitions)."""
 
@@ -111,6 +122,23 @@ async def update_status(
     await db.commit()
     await db.refresh(period)
     logger.info("Period %s → %s", period.period_id, new_status)
+    return period
+
+
+async def step_back(db: AsyncSession, period_id: uuid.UUID) -> Period:
+    """Move the period one step backward in the lifecycle."""
+    period = await db.get(Period, period_id)
+    if period is None:
+        raise PeriodError("Period not found")
+    previous = prev_status(period.status)
+    if previous is None:
+        raise PeriodError(f"Period is already at the earliest status ({period.status})")
+    period.status = previous
+    if previous != "closed":
+        period.closed_at = None
+    await db.commit()
+    await db.refresh(period)
+    logger.info("Period %s stepped back to %s", period.period_id, previous)
     return period
 
 

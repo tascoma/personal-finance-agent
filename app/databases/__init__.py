@@ -52,6 +52,7 @@ _ACCOUNTS_SEED = [
     (400106, "Employer 401(k) Match",             "Income",      "Employer Benefits",                    "credit", None,                      False),
     (410101, "Capital Gains – Realized",           "Income",      "Investment Income",                    "credit", None,                      False),
     (410102, "Capital Losses – Realized",          "Income",      "Investment Income",                    "debit",  None,                      False),
+    (410103, "Unrealized Market Gain/Loss",         "Income",      "Investment Income",                    "credit", None,                      False),
     (510101, "Mortgage Interest",                  "Expense",     "Housing",                              "debit",  None,                      False),
     (510102, "Property Taxes",                     "Expense",     "Housing",                              "debit",  None,                      False),
     (510103, "Home Insurance",                     "Expense",     "Housing",                              "debit",  None,                      False),

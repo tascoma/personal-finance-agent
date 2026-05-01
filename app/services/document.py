@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 UPLOAD_ROOT = Path("uploads")
 
 ALLOWED_DOCUMENT_TYPES: frozenset[str] = frozenset(
-    {"paystub", "bank_statement", "credit_card", "investment", "manual"}
+    {"paystub", "bank_statement", "credit_card", "investment", "mortgage_statement", "manual", "opening_balances"}
 )
 ALLOWED_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".csv", ".xlsx"})
 
@@ -104,6 +104,49 @@ async def list_documents(
         .order_by(Document.created_at)
     )
     return result.all()
+
+
+async def get_or_create_manual_document(
+    db: AsyncSession,
+    period_id: uuid.UUID,
+) -> Document:
+    """Return the single shared manual document for the period, creating it if needed."""
+    result = await db.scalars(
+        select(Document).where(
+            Document.period_id == period_id,
+            Document.document_type == "manual",
+        )
+    )
+    doc = result.first()
+    if doc is not None:
+        return doc
+
+    doc = Document(
+        period_id=period_id,
+        document_type="manual",
+        file_name="manual-entries",
+        file_path="manual",
+        source_account_code=None,
+        parse_status="complete",
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    logger.info("Created manual document for period %s", period_id)
+    return doc
+
+
+async def update_source_account(
+    db: AsyncSession,
+    document_id: uuid.UUID,
+    source_account_code: int | None,
+) -> None:
+    document = await db.get(Document, document_id)
+    if document is None:
+        raise DocumentError("Document not found")
+    document.source_account_code = source_account_code
+    await db.commit()
+    logger.info("Updated source account for document %s to %s", document_id, source_account_code)
 
 
 async def delete_document(db: AsyncSession, document_id: uuid.UUID) -> None:

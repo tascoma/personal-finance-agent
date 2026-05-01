@@ -80,6 +80,23 @@ async def test_upload_pdf_success(client: AsyncClient, session_factory, open_per
 
 
 @pytest.mark.asyncio
+async def test_upload_mortgage_statement(client: AsyncClient, session_factory, open_period):
+    files = {"file": ("mortgage.pdf", BytesIO(b"%PDF-1.4 dummy"), "application/pdf")}
+    data = {"document_type": "mortgage_statement"}
+    response = await client.post(
+        f"/periods/{open_period.period_id}/documents",
+        data=data,
+        files=files,
+    )
+    assert response.status_code == 200
+
+    async with session_factory() as session:
+        doc = await session.scalar(select(Document))
+    assert doc is not None
+    assert doc.document_type == "mortgage_statement"
+
+
+@pytest.mark.asyncio
 async def test_upload_rejects_invalid_extension(
     client: AsyncClient, session_factory, open_period
 ):

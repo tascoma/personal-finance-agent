@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% set active_page = "ledger" %}
+
+{% block title %}Ledger — Personal Finance Agent{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title-row">
+      <h1>Ledger</h1>
+    </div>
+    <p class="page-subtitle">All journal entries, grouped by period</p>
+  </div>
+</div>
+
+{% if not periods %}
+<div class="card">
+  <div class="empty-state">
+    <div class="empty-icon">
+      <svg width="18" height="18" class="icon"><use href="#ic-journal"/></svg>
+    </div>
+    <p class="empty-msg">No periods yet.</p>
+    <p class="empty-hint">Create a period under Workflow to begin recording entries.</p>
+  </div>
+</div>
+{% else %}
+
+{% for period in periods %}
+{% set period_entries = entries_by_period.get(period.period_id, []) %}
+<div class="card mb-16">
+  <div class="card-hd">
+    <div>
+      <div class="page-title-row" style="gap:10px;">
+        <div class="card-title">{{ period.period_start.strftime("%B %Y") }}</div>
+        <span class="badge badge--{{ period.status }}">{{ period.status.replace('_', ' ') | capitalize }}</span>
+      </div>
+      <div class="card-sub">
+        {{ period.period_start.strftime("%Y-%m-%d") }} → {{ period.period_end.strftime("%Y-%m-%d") }}
+        · {{ period_entries | length }} entr{{ 'y' if period_entries | length == 1 else 'ies' }}
+      </div>
+    </div>
+    <div class="card-hd-right" style="gap:8px;">
+      <button
+        class="btn btn-ghost btn-sm ledger-toggle"
+        data-target="period-entries-{{ period.period_id }}"
+        aria-expanded="true"
+        aria-label="Collapse entries for {{ period.period_start.strftime('%B %Y') }}"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" style="transition:transform .2s;transform:rotate(0deg);" class="toggle-icon"><path d="M2 4.5 7 9.5 12 4.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span class="toggle-label">Collapse</span>
+      </button>
+      <a href="/periods/{{ period.period_id }}/journal" class="btn btn-ghost btn-sm">Open Journal →</a>
+    </div>
+  </div>
+
+  {% if period_entries %}
+  <div id="period-entries-{{ period.period_id }}" style="display:flex;flex-direction:column;gap:12px;padding:14px 20px;">
+    {% for entry in period_entries %}
+    <div class="card" style="margin:0;">
+      <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <span style="font-weight:600;font-size:13.5px;">{{ entry.description }}</span>
+          <span class="mono color-text3" style="font-size:12px;margin-left:12px;">{{ entry.entry_date.strftime("%Y-%m-%d") }}</span>
+        </div>
+        <span class="badge badge--parsed">{{ entry.source_type }}</span>
+      </div>
+      {% set entry_lines = lines_by_entry.get(entry.entry_id, []) %}
+      {% if entry_lines %}
+      <table class="data-table" style="table-layout:fixed;">
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Memo</th>
+            <th class="text-right" style="width:130px;">Debit</th>
+            <th class="text-right" style="width:130px;">Credit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in entry_lines %}
+          <tr>
+            <td class="mono" style="font-size:13px;">
+              {{ line.account_code }}{% set acct = accounts_by_code.get(line.account_code) %}{% if acct %} · {{ acct.account_name }}{% endif %}
+            </td>
+            <td class="color-text3" style="font-size:12px;">{{ line.memo or '' }}</td>
+            <td class="mono text-right" style="color:{% if line.debit_amount > 0 %}var(--text-1){% else %}var(--text-3){% endif %};">
+              {% if line.debit_amount > 0 %}${{ "%.2f" | format(line.debit_amount) }}{% else %}—{% endif %}
+            </td>
+            <td class="mono text-right" style="color:{% if line.credit_amount > 0 %}var(--text-1){% else %}var(--text-3){% endif %};">
+              {% if line.credit_amount > 0 %}${{ "%.2f" | format(line.credit_amount) }}{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="color-text3" style="font-size:12px;" colspan="2">Total</td>
+            <td class="mono text-right fw-600">${{ "%.2f" | format(entry_lines | sum(attribute='debit_amount')) }}</td>
+            <td class="mono text-right fw-600">${{ "%.2f" | format(entry_lines | sum(attribute='credit_amount')) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div id="period-entries-{{ period.period_id }}" class="empty-state">
+    <p class="empty-msg">No entries posted yet.</p>
+    <p class="empty-hint">Approve transactions and post them, or upload an opening-balances file.</p>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}
+
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.ledger-toggle').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var expanded = btn.getAttribute('aria-expanded') === 'true';
+    var target = document.getElementById(btn.dataset.target);
+    var icon = btn.querySelector('.toggle-icon');
+    var label = btn.querySelector('.toggle-label');
+    if (expanded) {
+      target.style.display = 'none';
+      icon.style.transform = 'rotate(-90deg)';
+      label.textContent = 'Expand';
+      btn.setAttribute('aria-expanded', 'false');
+      btn.setAttribute('aria-label', btn.getAttribute('aria-label').replace('Collapse', 'Expand'));
+    } else {
+      target.style.display = '';
+      icon.style.transform = 'rotate(0deg)';
+      label.textContent = 'Collapse';
+      btn.setAttribute('aria-expanded', 'true');
+      btn.setAttribute('aria-label', btn.getAttribute('aria-label').replace('Expand', 'Collapse'));
+    }
+  });
+});
+</script>
+{% endblock %}
