@@ -394,16 +394,28 @@ async def post_closing_entries(
         balance = _signed_balance(acct.normal_balance, debit_sum, credit_sum)
         if balance == _ZERO:
             continue
+        amt = abs(balance)
         if acct.account_type == "Income":
             if acct.normal_balance == "credit":
-                lines.append((acct.account_code, balance, _ZERO, "Close income"))
+                # Debit to close (credit-normal); flip if balance is reversed
+                if balance > _ZERO:
+                    lines.append((acct.account_code, amt, _ZERO, "Close income"))
+                else:
+                    lines.append((acct.account_code, _ZERO, amt, "Close income"))
                 net_income += balance
             else:
-                # Debit-normal income (contra-income e.g. capital losses): credit to zero
-                lines.append((acct.account_code, _ZERO, balance, "Close contra-income"))
+                # Debit-normal contra-income: credit to close; flip if reversed
+                if balance > _ZERO:
+                    lines.append((acct.account_code, _ZERO, amt, "Close contra-income"))
+                else:
+                    lines.append((acct.account_code, amt, _ZERO, "Close contra-income"))
                 net_income -= balance
         else:
-            lines.append((acct.account_code, _ZERO, balance, "Close expense"))
+            # Credit to close expense (debit-normal); flip if balance is reversed
+            if balance > _ZERO:
+                lines.append((acct.account_code, _ZERO, amt, "Close expense"))
+            else:
+                lines.append((acct.account_code, amt, _ZERO, "Close expense"))
             net_income -= balance
 
     if not lines:
