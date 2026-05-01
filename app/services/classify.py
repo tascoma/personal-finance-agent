@@ -73,30 +73,35 @@ async def classify_period(
         return 0
 
     coa_table = _build_coa_table(all_accounts)
-    user_prompt = (
-        f"Chart of accounts:\n{coa_table}\n\n"
-        f"Transactions to classify:\n{_format_txn_inputs(txn_inputs)}"
-    )
-
-    try:
-        result = await classifier_agent.run(user_prompt)
-    except Exception:
-        logger.error(
-            "Classifier agent call failed for period %s (%d candidates)",
-            period_id,
-            len(eligible),
-            exc_info=True,
-        )
-        raise
-    output: ClassifierOutput = result.output
-
     eligible_by_short_id: dict[str, RawTransaction] = {
         t.raw_txn_id.hex[:8]: t for t in eligible
     }
     valid_codes: set[int] = {a.account_code for a in all_accounts}
 
+    all_suggestions: list = []
+    batch_size = 25
+    for batch_start in range(0, len(txn_inputs), batch_size):
+        batch = txn_inputs[batch_start : batch_start + batch_size]
+        user_prompt = (
+            f"Chart of accounts:\n{coa_table}\n\n"
+            f"Transactions to classify:\n{_format_txn_inputs(batch)}"
+        )
+        try:
+            result = await classifier_agent.run(user_prompt)
+        except Exception:
+            logger.error(
+                "Classifier agent call failed for period %s (batch %d-%d of %d)",
+                period_id,
+                batch_start,
+                batch_start + len(batch) - 1,
+                len(eligible),
+                exc_info=True,
+            )
+            raise
+        all_suggestions.extend(result.output.suggestions)
+
     updated = 0
-    for suggestion in output.suggestions:
+    for suggestion in all_suggestions:
         txn = eligible_by_short_id.get(suggestion.id)
         if txn is None:
             logger.warning("Classifier returned unknown id %r — skipping", suggestion.id)
