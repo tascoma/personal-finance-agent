@@ -37,7 +37,7 @@ _ACCOUNTS_SEED = [
     (110101, "EJ – Brokerage (Single Account)",    "Asset",       "Investments",                          "debit",  None,                      False),
     (110102, "Computer Share – ASPP",              "Asset",       "Investments",                          "debit",  "CO STK CONT|STOCK PURCH", False),
     (110103, "Coinbase – Crypto",                  "Asset",       "Investments",                          "debit",  None,                      False),
-    (111101, "EJ – Roth IRA",                      "Asset",       "Investments",                          "debit",  None,                      False),
+    (111101, "EJ – Roth IRA",                      "Asset",       "Retirement & Tax-Advantaged Accounts", "debit",  None,                      False),
     (111102, "Merrill – Roth 401(k)",              "Asset",       "Retirement & Tax-Advantaged Accounts", "debit",  "ROTH 401K",               False),
     (111103, "HSA – Investments",                  "Asset",       "Retirement & Tax-Advantaged Accounts", "debit",  None,                      False),
     (112101, "Fidelity – RSUs (Vested)",           "Asset",       "Investments",                          "debit",  None,                      False),
