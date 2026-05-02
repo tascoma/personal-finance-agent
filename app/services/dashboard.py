@@ -1,5 +1,6 @@
 """Dashboard metrics — all data computed in two queries (lines + recent entries)."""
 
+import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -53,6 +54,7 @@ class DashboardData:
     total_liabilities: Decimal
     net_worth: Decimal
     investing_cashflow: Decimal
+    salary_income: Decimal
     period_bars: list[PeriodBar]
     net_worth_series: list[NetWorthPoint]
     top_expense_categories: list[ExpenseCategory]
@@ -98,12 +100,39 @@ def _expense_by_subcategory(
     )[:8]
 
 
-async def compute_dashboard(db: AsyncSession) -> DashboardData:
+async def compute_dashboard(
+    db: AsyncSession,
+    year: Optional[int] = None,
+    period_id: Optional[uuid.UUID] = None,
+) -> DashboardData:
     accounts_result = await db.scalars(select(Account))
     accounts: dict[int, Account] = {a.account_code: a for a in accounts_result.all()}
 
     periods_result = await db.scalars(select(Period).order_by(Period.period_start.asc()))
-    periods = list(periods_result.all())
+    all_periods = list(periods_result.all())
+
+    if period_id is not None:
+        periods = [p for p in all_periods if p.period_id == period_id]
+    elif year is not None:
+        periods = [p for p in all_periods if p.period_start.year == year]
+    else:
+        periods = all_periods
+
+    # Only closed periods contribute to any metric or chart.
+    all_closed_periods = [p for p in all_periods if p.status == "closed"]
+    all_closed_ids = {p.period_id for p in all_closed_periods}
+
+    closed_filter_periods = [p for p in periods if p.status == "closed"]
+    filter_closed_ids = {p.period_id for p in closed_filter_periods}
+
+    # Balance-sheet figures are cumulative — use all closed periods up to and
+    # including the last closed period in the filter selection so that
+    # total_assets / net_worth reflect the actual balance, not just the period's change.
+    if closed_filter_periods:
+        max_filter_start = max(p.period_start for p in closed_filter_periods)
+        bs_period_ids = {p.period_id for p in all_closed_periods if p.period_start <= max_filter_start}
+    else:
+        bs_period_ids = all_closed_ids
 
     rows = await db.execute(
         select(JournalLine, JournalEntry.period_id, JournalEntry.entry_id, JournalEntry.is_closing)
@@ -111,17 +140,22 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
     )
     all_rows = rows.all()
 
-    lines_all: list[JournalLine] = []
-    lines_operating: list[JournalLine] = []  # excludes closing entries
-    lines_by_period: dict = defaultdict(list)
+    # lines_bs_all     — all closed periods up to last filtered period (balance-sheet KPI totals)
+    # lines_bs_by_pid  — all closed periods by period (net-worth series running total)
+    # lines_operating  — filtered closed periods, no closing entries (income/expense flow figures)
+    lines_bs_all: list[JournalLine] = []
+    lines_bs_by_pid: dict = defaultdict(list)
+    lines_operating: list[JournalLine] = []
     lines_operating_by_period: dict = defaultdict(list)
     lines_operating_by_entry: dict = defaultdict(list)
-    for line, period_id, entry_id, is_closing in all_rows:
-        lines_all.append(line)
-        lines_by_period[period_id].append(line)
-        if not is_closing:
+    for line, pid, entry_id, is_closing in all_rows:
+        if pid in all_closed_ids:
+            lines_bs_by_pid[pid].append(line)
+        if pid in bs_period_ids:
+            lines_bs_all.append(line)
+        if pid in filter_closed_ids and not is_closing:
             lines_operating.append(line)
-            lines_operating_by_period[period_id].append(line)
+            lines_operating_by_period[pid].append(line)
             lines_operating_by_entry[entry_id].append(line)
 
     # Income/Expense must exclude closing entries — closing entries zero out those
@@ -129,8 +163,8 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
     total_income = _sum_by_type(lines_operating, accounts, "Income")
     total_expenses = _sum_by_type(lines_operating, accounts, "Expense")
     net_income = total_income - total_expenses
-    total_assets = _sum_by_type(lines_all, accounts, "Asset")
-    total_liabilities = _sum_by_type(lines_all, accounts, "Liability")
+    total_assets = _sum_by_type(lines_bs_all, accounts, "Asset")
+    total_liabilities = _sum_by_type(lines_bs_all, accounts, "Liability")
     net_worth = total_assets - total_liabilities
 
     cash_codes = {code for code, a in accounts.items() if a.account_type == "Asset" and "cash" in a.sub_category.lower()}
@@ -138,6 +172,10 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
     investing_bucket: dict[int, Decimal] = defaultdict(lambda: _ZERO)
     for entry_lines in lines_operating_by_entry.values():
         if not any(ln.account_code in cash_codes for ln in entry_lines):
+            continue
+        # Opening balance entries credit equity alongside asset debits — exclude them
+        # so their starting balances don't distort investing cashflow.
+        if any(accounts.get(ln.account_code) and accounts[ln.account_code].account_type == "Equity" for ln in entry_lines):
             continue
         for ln in entry_lines:
             if ln.account_code in cash_codes or ln.account_code in wc_codes:
@@ -149,13 +187,26 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
                 investing_bucket[ln.account_code] += ln.credit_amount - ln.debit_amount
     investing_cashflow = sum(investing_bucket.values(), _ZERO)
 
+    salary_income = sum(
+        (ln.credit_amount - ln.debit_amount for ln in lines_operating if ln.account_code == 400101),
+        _ZERO,
+    )
+
+    # Walk ALL closed periods in chronological order so the running balance-sheet
+    # total is always correct. Only emit chart points for periods in the filter.
     period_bars: list[PeriodBar] = []
     running_assets = _ZERO
     running_liabilities = _ZERO
     net_worth_series: list[NetWorthPoint] = []
 
-    for p in periods:
-        p_lines = lines_by_period.get(p.period_id, [])
+    for p in all_closed_periods:
+        p_bs_lines = lines_bs_by_pid.get(p.period_id, [])
+        running_assets += _sum_by_type(p_bs_lines, accounts, "Asset")
+        running_liabilities += _sum_by_type(p_bs_lines, accounts, "Liability")
+
+        if p.period_id not in filter_closed_ids:
+            continue
+
         p_op_lines = lines_operating_by_period.get(p.period_id, [])
         p_income = _sum_by_type(p_op_lines, accounts, "Income")
         p_expenses = _sum_by_type(p_op_lines, accounts, "Expense")
@@ -165,8 +216,6 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
             expenses=float(p_expenses),
             net=float(p_income - p_expenses),
         ))
-        running_assets += _sum_by_type(p_lines, accounts, "Asset")
-        running_liabilities += _sum_by_type(p_lines, accounts, "Liability")
         net_worth_series.append(NetWorthPoint(
             label=p.period_start.strftime("%b %Y"),
             net_worth=float(running_assets - running_liabilities),
@@ -177,10 +226,11 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
     recent_result = await db.execute(
         select(JournalEntry, Period.period_start)
         .join(Period, JournalEntry.period_id == Period.period_id)
+        .where(JournalEntry.period_id.in_(filter_closed_ids))
         .order_by(JournalEntry.entry_date.desc(), JournalEntry.created_at.desc())
         .limit(6)
     )
-    period_labels: dict = {p.period_id: p.period_start.strftime("%b %Y") for p in periods}
+    period_labels: dict = {p.period_id: p.period_start.strftime("%b %Y") for p in all_closed_periods}
 
     lines_by_entry: dict = defaultdict(list)
     for line, period_id, entry_id, _is_closing in all_rows:
@@ -198,7 +248,7 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
             total_debit=total_debit,
         ))
 
-    has_data = len(lines_all) > 0
+    has_data = len(lines_bs_all) > 0
 
     return DashboardData(
         total_income=total_income,
@@ -208,10 +258,11 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
         total_liabilities=total_liabilities,
         net_worth=net_worth,
         investing_cashflow=investing_cashflow,
+        salary_income=salary_income,
         period_bars=period_bars,
         net_worth_series=net_worth_series,
         top_expense_categories=top_expense_categories,
         recent_entries=recent_entries,
-        period_count=len(periods),
+        period_count=len(closed_filter_periods),
         has_data=has_data,
     )

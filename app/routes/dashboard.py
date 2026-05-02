@@ -1,6 +1,8 @@
 import logging
+import uuid
+from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db_session
@@ -22,9 +24,11 @@ router = APIRouter(tags=["dashboard"])
 
 @router.get("/dashboard", response_model=DashboardResponse)
 async def get_dashboard(
+    year: Optional[int] = Query(None),
+    period_id: Optional[uuid.UUID] = Query(None),
     db: AsyncSession = Depends(get_db_session),
 ) -> DashboardResponse:
-    data = await dashboard_service.compute_dashboard(db)
+    data = await dashboard_service.compute_dashboard(db, year=year, period_id=period_id)
     active_period = await get_current_open_period(db)
 
     return DashboardResponse(
@@ -35,6 +39,7 @@ async def get_dashboard(
         total_liabilities=str(data.total_liabilities),
         net_worth=str(data.net_worth),
         investing_cashflow=str(data.investing_cashflow),
+        salary_income=str(data.salary_income),
         period_count=data.period_count,
         has_data=data.has_data,
         period_bars=[
