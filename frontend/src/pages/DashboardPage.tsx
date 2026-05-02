@@ -143,7 +143,7 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
-          <div className="kpi-grid kpi-grid-5">
+          <div className="kpi-grid kpi-grid-6">
             <div className="kpi-card">
               <div className="kpi-label">Total Income</div>
               <div className="kpi-value" style={{ color: 'var(--green)', fontSize: 22 }}>{fmtMoney(data.total_income)}</div>
@@ -169,6 +169,19 @@ export default function DashboardPage() {
               <div className="kpi-value" style={{ color: kpiColor(data.net_worth, 'var(--accent)', 'var(--red)'), fontSize: 22 }}>{fmtMoney(data.net_worth)}</div>
               <div className="kpi-sub">assets − liabilities</div>
             </div>
+            {(() => {
+              const income = parseFloat(data.total_income)
+              const inv = parseFloat(data.investing_cashflow)
+              const pct = income !== 0 ? (inv / income) * 100 : 0
+              const color = pct >= 0 ? 'var(--green)' : 'var(--red)'
+              return (
+                <div className="kpi-card">
+                  <div className="kpi-label">Invest Cashflow</div>
+                  <div className="kpi-value" style={{ color, fontSize: 22 }}>{pct.toFixed(1)}%</div>
+                  <div className="kpi-sub">of total income</div>
+                </div>
+              )
+            })()}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 16, marginBottom: 16 }}>

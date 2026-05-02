@@ -7,9 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db_session, get_mortgage_extractor, get_paystub_extractor, get_statement_extractor
 from app.models.document import Document
-from app.schemas.api_responses import SourceAccountRequest
+from app.schemas.api_responses import CountResult, OperationResult, SourceAccountRequest
 from app.schemas.document import DocumentRead
 from app.services import document as document_service
+from app.services import journal as journal_service
 from app.services import parse as parse_service
 
 logger = logging.getLogger(__name__)
@@ -38,17 +39,18 @@ async def upload_document(
     return DocumentRead.model_validate(doc)
 
 
-@router.delete("/periods/{period_id}/documents/{document_id}")
+@router.delete("/periods/{period_id}/documents/{document_id}", response_model=OperationResult)
 async def delete_document(
     period_id: uuid.UUID,
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-) -> dict:
+) -> OperationResult:
     try:
         await document_service.delete_document(db, document_id)
     except document_service.DocumentError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True}
+    logger.info("Deleted document %s from period %s", document_id, period_id)
+    return OperationResult(ok=True)
 
 
 @router.post("/periods/{period_id}/documents/{document_id}/parse", response_model=DocumentRead)
@@ -64,36 +66,29 @@ async def parse_document(
     if doc is None or doc.period_id != period_id:
         raise HTTPException(status_code=404, detail="Document not found")
     try:
-        updated = await parse_service.parse_document(
+        await parse_service.parse_document(
             db,
-            document=doc,
+            document_id=document_id,
             statement_agent=statement_agent,
             paystub_agent=paystub_agent,
             mortgage_agent=mortgage_agent,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return DocumentRead.model_validate(updated)
+        logger.error("Parse failed for document %s: %s", document_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Document parsing failed") from exc
+    await db.refresh(doc)
+    return DocumentRead.model_validate(doc)
 
 
-@router.post("/periods/{period_id}/documents/{document_id}/unpost")
+@router.post("/periods/{period_id}/documents/{document_id}/unpost", response_model=CountResult)
 async def unpost_document(
     period_id: uuid.UUID,
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-) -> dict:
-    from sqlalchemy import delete
-    from app.models.raw_transaction import RawTransaction
-
-    result = await db.execute(
-        delete(RawTransaction).where(
-            RawTransaction.document_id == document_id,
-            RawTransaction.status.in_(["staged", "approved"]),
-        ).returning(RawTransaction.raw_txn_id)
-    )
-    unposted = len(result.all())
-    await db.commit()
-    return {"unposted": unposted}
+) -> CountResult:
+    unposted = await journal_service.unpost_document(db, document_id, period_id)
+    logger.info("Unposted %d transactions for document %s in period %s", unposted, document_id, period_id)
+    return CountResult(count=unposted)
 
 
 @router.patch("/periods/{period_id}/documents/{document_id}/source-account", response_model=DocumentRead)

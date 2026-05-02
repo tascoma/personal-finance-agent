@@ -58,7 +58,7 @@ async def test_accounts_seeded(seeded_engine):
     factory = async_sessionmaker(seeded_engine, expire_on_commit=False)
     async with factory() as session:
         count = await session.scalar(select(func.count()).select_from(Account))
-    assert count == 68
+    assert count == 69
 
 
 @pytest.mark.asyncio

@@ -48,7 +48,7 @@ class ReconciliationAnalysis(BaseModel):
 def build_reconciliation_agent() -> Agent:
     """Cached so the module can be imported in tests without a live API key."""
     model = AnthropicModel(
-        "claude-sonnet-4-6",
+        settings.anthropic_model,
         provider=AnthropicProvider(api_key=settings.anthropic_api_key),
     )
     return Agent(model, output_type=ReconciliationAnalysis, system_prompt=_SYSTEM_PROMPT)

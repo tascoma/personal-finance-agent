@@ -1,47 +1,68 @@
-import json
+import logging
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db_session
+from app.schemas.api_responses import (
+    DashboardResponse,
+    ExpenseCategoryPoint,
+    NetWorthPoint,
+    PeriodBarPoint,
+    RecentEntryPoint,
+)
+from app.schemas.period import PeriodRead
 from app.services import dashboard as dashboard_service
-from app.services import period as period_service
+from app.services.period import get_current_open_period
 
-router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["dashboard"])
 
 
-@router.get("/", response_class=HTMLResponse)
-async def dashboard(
-    request: Request,
+@router.get("/dashboard", response_model=DashboardResponse)
+async def get_dashboard(
     db: AsyncSession = Depends(get_db_session),
-) -> HTMLResponse:
-    current = await period_service.get_current_open_period(db)
+) -> DashboardResponse:
     data = await dashboard_service.compute_dashboard(db)
+    active_period = await get_current_open_period(db)
 
-    chart_period_bars = json.dumps([
-        {"label": b.label, "income": b.income, "expenses": b.expenses, "net": b.net}
-        for b in data.period_bars
-    ])
-    chart_net_worth = json.dumps([
-        {"label": p.label, "net_worth": p.net_worth}
-        for p in data.net_worth_series
-    ])
-    chart_expense_cats = json.dumps([
-        {"label": c.label, "amount": c.amount}
-        for c in data.top_expense_categories
-    ])
-
-    return templates.TemplateResponse(
-        request,
-        "dashboard.html",
-        {
-            "period": current,
-            "data": data,
-            "chart_period_bars": chart_period_bars,
-            "chart_net_worth": chart_net_worth,
-            "chart_expense_cats": chart_expense_cats,
-        },
+    return DashboardResponse(
+        total_income=str(data.total_income),
+        total_expenses=str(data.total_expenses),
+        net_income=str(data.net_income),
+        total_assets=str(data.total_assets),
+        total_liabilities=str(data.total_liabilities),
+        net_worth=str(data.net_worth),
+        investing_cashflow=str(data.investing_cashflow),
+        period_count=data.period_count,
+        has_data=data.has_data,
+        period_bars=[
+            PeriodBarPoint(
+                period_label=b.label,
+                income=str(b.income),
+                expenses=str(b.expenses),
+                net=str(b.net),
+            )
+            for b in data.period_bars
+        ],
+        net_worth_series=[
+            NetWorthPoint(period_label=p.label, net_worth=str(p.net_worth))
+            for p in data.net_worth_series
+        ],
+        top_expense_categories=[
+            ExpenseCategoryPoint(category=c.label, amount=str(c.amount))
+            for c in data.top_expense_categories
+        ],
+        recent_entries=[
+            RecentEntryPoint(
+                description=e.description,
+                entry_date=e.entry_date,
+                source_type=e.source_type,
+                period_label=e.period_label,
+                total_debit=str(e.total_debit),
+            )
+            for e in data.recent_entries
+        ],
+        active_period=PeriodRead.model_validate(active_period) if active_period else None,
     )

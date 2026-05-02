@@ -35,9 +35,7 @@ async def client(session_factory):
 
     app.dependency_overrides[get_db_session] = override_get_db_session
     transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport, base_url="http://test", follow_redirects=True
-    ) as c:
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
 
@@ -145,74 +143,72 @@ async def test_reopen_non_closed_period_rejected(session_factory):
 
 @pytest.mark.asyncio
 async def test_list_periods_empty(client: AsyncClient):
-    response = await client.get("/periods")
+    response = await client.get("/api/v1/periods")
     assert response.status_code == 200
-    assert "No periods yet" in response.text
+    assert response.json() == []
 
 
 @pytest.mark.asyncio
-async def test_create_period_via_form(client: AsyncClient):
-    response = await client.post("/periods", data={"year": 2026, "month": 4})
-    assert response.status_code == 200
-    assert "April 2026" in response.text
-    assert "Open" in response.text
+async def test_create_period_via_api(client: AsyncClient):
+    response = await client.post("/api/v1/periods", json={"year": 2026, "month": 4})
+    assert response.status_code == 201
+    data = response.json()
+    assert data["period_start"] == "2026-04-01"
+    assert data["status"] == "open"
 
 
 @pytest.mark.asyncio
-async def test_create_duplicate_period_shows_error(client: AsyncClient):
-    await client.post("/periods", data={"year": 2026, "month": 4})
-    response = await client.post("/periods", data={"year": 2026, "month": 4})
-    assert response.status_code == 200
-    assert "already exists" in response.text
+async def test_create_duplicate_period_returns_400(client: AsyncClient):
+    await client.post("/api/v1/periods", json={"year": 2026, "month": 4})
+    response = await client.post("/api/v1/periods", json={"year": 2026, "month": 4})
+    assert response.status_code == 400
+    assert "already exists" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
 async def test_period_detail_404(client: AsyncClient):
-    response = await client.get("/periods/00000000-0000-0000-0000-000000000000")
+    response = await client.get("/api/v1/periods/00000000-0000-0000-0000-000000000000")
     assert response.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_advance_status_via_form(client: AsyncClient, session_factory):
-    await client.post("/periods", data={"year": 2026, "month": 4})
+async def test_advance_status_via_api(client: AsyncClient, session_factory):
+    await client.post("/api/v1/periods", json={"year": 2026, "month": 4})
 
     async with session_factory() as session:
         period = await session.scalar(select(Period))
 
     response = await client.post(
-        f"/periods/{period.period_id}/status",
-        data={"new_status": "pending_review"},
+        f"/api/v1/periods/{period.period_id}/status",
+        json={"new_status": "pending_review"},
     )
     assert response.status_code == 200
-    assert "Pending review" in response.text
+    assert response.json()["status"] == "pending_review"
 
 
 @pytest.mark.asyncio
-async def test_advance_status_illegal_skip_shows_error(
-    client: AsyncClient, session_factory
-):
-    await client.post("/periods", data={"year": 2026, "month": 4})
+async def test_advance_status_illegal_skip_returns_400(client: AsyncClient, session_factory):
+    await client.post("/api/v1/periods", json={"year": 2026, "month": 4})
     async with session_factory() as session:
         period = await session.scalar(select(Period))
 
     response = await client.post(
-        f"/periods/{period.period_id}/status",
-        data={"new_status": "closed"},
+        f"/api/v1/periods/{period.period_id}/status",
+        json={"new_status": "closed"},
     )
-    assert response.status_code == 200
-    assert "Illegal transition" in response.text
+    assert response.status_code == 400
 
 
 @pytest.mark.asyncio
-async def test_delete_period_via_form(client: AsyncClient, session_factory):
-    await client.post("/periods", data={"year": 2026, "month": 4})
+async def test_delete_period_via_api(client: AsyncClient, session_factory):
+    await client.post("/api/v1/periods", json={"year": 2026, "month": 4})
     async with session_factory() as session:
         period = await session.scalar(select(Period))
     pid = period.period_id
 
-    response = await client.post(f"/periods/{pid}/delete")
+    response = await client.delete(f"/api/v1/periods/{pid}")
     assert response.status_code == 200
-    assert "No periods yet" in response.text
+    assert response.json() == {"ok": True}
 
     async with session_factory() as session:
         remaining = await session.scalar(select(Period))
@@ -220,32 +216,34 @@ async def test_delete_period_via_form(client: AsyncClient, session_factory):
 
 
 @pytest.mark.asyncio
-async def test_reopen_period_via_form(client: AsyncClient, session_factory):
-    await client.post("/periods", data={"year": 2026, "month": 4})
+async def test_reopen_period_via_api(client: AsyncClient, session_factory):
+    await client.post("/api/v1/periods", json={"year": 2026, "month": 4})
     async with session_factory() as session:
         period = await session.scalar(select(Period))
     pid = period.period_id
 
     for target in ("pending_review", "pending_close", "closed"):
-        await client.post(f"/periods/{pid}/status", data={"new_status": target})
+        await client.post(f"/api/v1/periods/{pid}/status", json={"new_status": target})
 
-    response = await client.post(f"/periods/{pid}/reopen")
+    response = await client.post(f"/api/v1/periods/{pid}/reopen")
     assert response.status_code == 200
-    assert "Open" in response.text
-    assert "Reopen period" not in response.text
+    assert response.json()["status"] == "open"
 
 
 @pytest.mark.asyncio
 async def test_dashboard_empty_state(client: AsyncClient):
-    response = await client.get("/")
+    response = await client.get("/api/v1/dashboard")
     assert response.status_code == 200
-    assert "No open period yet" in response.text
+    data = response.json()
+    assert data["active_period"] is None
+    assert data["has_data"] is False
 
 
 @pytest.mark.asyncio
 async def test_dashboard_surfaces_current_open_period(client: AsyncClient):
-    await client.post("/periods", data={"year": 2026, "month": 4})
-    response = await client.get("/")
+    await client.post("/api/v1/periods", json={"year": 2026, "month": 4})
+    response = await client.get("/api/v1/dashboard")
     assert response.status_code == 200
-    assert "April 2026" in response.text
-    assert "No open period yet" not in response.text
+    data = response.json()
+    assert data["active_period"] is not None
+    assert data["active_period"]["period_start"] == "2026-04-01"

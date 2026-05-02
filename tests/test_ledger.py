@@ -53,9 +53,11 @@ async def client(session_factory):
 
 @pytest.mark.asyncio
 async def test_ledger_empty_when_no_periods(client: AsyncClient):
-    response = await client.get("/ledger")
+    response = await client.get("/api/v1/ledger")
     assert response.status_code == 200
-    assert "No periods yet" in response.text
+    data = response.json()
+    assert data["periods"] == []
+    assert data["entries_by_period"] == {}
 
 
 @pytest.mark.asyncio
@@ -90,14 +92,18 @@ async def test_ledger_lists_entries_grouped_by_period(client, session_factory):
         ))
         await session.commit()
 
-    response = await client.get("/ledger")
+    response = await client.get("/api/v1/ledger")
     assert response.status_code == 200
-    text = response.text
-    assert "December 2025" in text
-    assert "Opening balances" in text
-    assert "5200.00" in text
-    assert "300102" in text
-    assert "100101" in text
+    data = response.json()
+    assert len(data["periods"]) == 1
+    pid_str = str(period_id)
+    assert pid_str in data["entries_by_period"]
+    entries = data["entries_by_period"][pid_str]
+    assert len(entries) == 1
+    assert "Opening balances" in entries[0]["description"]
+    lines = entries[0]["lines"]
+    amounts = {line["account_code"]: line["debit_amount"] for line in lines}
+    assert amounts[100101] == "5200.00"
 
 
 @pytest.mark.asyncio
@@ -112,7 +118,9 @@ async def test_ledger_renders_period_with_no_entries(client, session_factory):
         ))
         await session.commit()
 
-    response = await client.get("/ledger")
+    response = await client.get("/api/v1/ledger")
     assert response.status_code == 200
-    assert "January 2026" in response.text
-    assert "No entries posted yet" in response.text
+    data = response.json()
+    assert len(data["periods"]) == 1
+    assert data["periods"][0]["period_start"] == "2026-01-01"
+    assert str(period_id) not in data["entries_by_period"] or data["entries_by_period"].get(str(period_id), []) == []

@@ -9,7 +9,11 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-engine = create_async_engine(settings.database_url, echo=False)
+engine = create_async_engine(
+    settings.database_url,
+    echo=settings.db_echo,
+    pool_pre_ping=settings.db_pool_pre_ping,
+)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
@@ -126,7 +130,7 @@ async def init_db() -> None:
     from app.models import (  # noqa: F401 — import triggers Base registration
         Account, Period, Document, RawTransaction,
         JournalEntry, JournalLine, StatedBalance,
-        Reconciliation, ReviewQueue, MemoBalance,
+        Reconciliation, ReviewQueue,
     )
 
     async with engine.begin() as conn:

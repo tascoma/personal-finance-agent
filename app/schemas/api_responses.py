@@ -60,6 +60,7 @@ class DashboardResponse(BaseModel):
     total_assets: str
     total_liabilities: str
     net_worth: str
+    investing_cashflow: str
     period_count: int
     has_data: bool
     period_bars: list[PeriodBarPoint]
@@ -235,6 +236,19 @@ class ManualJournalEntryCreate(BaseModel):
 class StatedBalanceItem(BaseModel):
     account_code: int
     stated_balance: str
+
+
+class OperationResult(BaseModel):
+    ok: bool
+
+
+class CountResult(BaseModel):
+    count: int
+
+
+class ParseResult(BaseModel):
+    parsed: int
+    errors: list[str]
 
 
 class StatusUpdateRequest(BaseModel):

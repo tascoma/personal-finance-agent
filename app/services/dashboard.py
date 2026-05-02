@@ -52,6 +52,7 @@ class DashboardData:
     total_assets: Decimal
     total_liabilities: Decimal
     net_worth: Decimal
+    investing_cashflow: Decimal
     period_bars: list[PeriodBar]
     net_worth_series: list[NetWorthPoint]
     top_expense_categories: list[ExpenseCategory]
@@ -114,12 +115,14 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
     lines_operating: list[JournalLine] = []  # excludes closing entries
     lines_by_period: dict = defaultdict(list)
     lines_operating_by_period: dict = defaultdict(list)
+    lines_operating_by_entry: dict = defaultdict(list)
     for line, period_id, entry_id, is_closing in all_rows:
         lines_all.append(line)
         lines_by_period[period_id].append(line)
         if not is_closing:
             lines_operating.append(line)
             lines_operating_by_period[period_id].append(line)
+            lines_operating_by_entry[entry_id].append(line)
 
     # Income/Expense must exclude closing entries — closing entries zero out those
     # accounts by reversing them into equity, so including them cancels everything to zero.
@@ -129,6 +132,22 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
     total_assets = _sum_by_type(lines_all, accounts, "Asset")
     total_liabilities = _sum_by_type(lines_all, accounts, "Liability")
     net_worth = total_assets - total_liabilities
+
+    cash_codes = {code for code, a in accounts.items() if a.account_type == "Asset" and "cash" in a.sub_category.lower()}
+    wc_codes = {code for code, a in accounts.items() if a.account_type == "Liability" and a.sub_category == "Credit Cards"}
+    investing_bucket: dict[int, Decimal] = defaultdict(lambda: _ZERO)
+    for entry_lines in lines_operating_by_entry.values():
+        if not any(ln.account_code in cash_codes for ln in entry_lines):
+            continue
+        for ln in entry_lines:
+            if ln.account_code in cash_codes or ln.account_code in wc_codes:
+                continue
+            acct = accounts.get(ln.account_code)
+            if acct is None or acct.account_type in ("Income", "Expense"):
+                continue
+            if acct.account_type == "Asset":
+                investing_bucket[ln.account_code] += ln.credit_amount - ln.debit_amount
+    investing_cashflow = sum(investing_bucket.values(), _ZERO)
 
     period_bars: list[PeriodBar] = []
     running_assets = _ZERO
@@ -164,7 +183,7 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
     period_labels: dict = {p.period_id: p.period_start.strftime("%b %Y") for p in periods}
 
     lines_by_entry: dict = defaultdict(list)
-    for line, period_id, entry_id, is_closing in all_rows:
+    for line, period_id, entry_id, _is_closing in all_rows:
         lines_by_entry[entry_id].append(line)
 
     recent_entries: list[RecentEntry] = []
@@ -188,6 +207,7 @@ async def compute_dashboard(db: AsyncSession) -> DashboardData:
         total_assets=total_assets,
         total_liabilities=total_liabilities,
         net_worth=net_worth,
+        investing_cashflow=investing_cashflow,
         period_bars=period_bars,
         net_worth_series=net_worth_series,
         top_expense_categories=top_expense_categories,

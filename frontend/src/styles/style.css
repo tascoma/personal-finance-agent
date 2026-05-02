@@ -341,6 +341,7 @@ html.nav-collapsed .sidebar-collapse-icon { transform: rotate(0deg); }
 
 /* ── KPI Cards ── */
 .kpi-grid { display: grid; gap: 14px; margin-bottom: 20px; }
+.kpi-grid-6 { grid-template-columns: repeat(6,1fr); }
 .kpi-grid-5 { grid-template-columns: repeat(5,1fr); }
 .kpi-grid-4 { grid-template-columns: repeat(4,1fr); }
 
@@ -630,6 +631,7 @@ select.inp { cursor: pointer; appearance: none; }
 
 /* ── Responsive ── */
 @media (max-width: 960px) {
+  .kpi-grid-6 { grid-template-columns: repeat(3,1fr); }
   .kpi-grid-5 { grid-template-columns: repeat(3,1fr); }
   .kpi-grid-4 { grid-template-columns: repeat(2,1fr); }
   .grid-chart-is, .grid-chart-cf { grid-template-columns: 1fr; }
@@ -639,5 +641,5 @@ select.inp { cursor: pointer; appearance: none; }
   .sidebar { transform: translateX(-100%); }
   .main { margin-left: 0; padding: 20px; }
   .grid-2 { grid-template-columns: 1fr; }
-  .kpi-grid-5, .kpi-grid-4 { grid-template-columns: 1fr 1fr; }
+  .kpi-grid-6, .kpi-grid-5, .kpi-grid-4 { grid-template-columns: 1fr 1fr; }
 }

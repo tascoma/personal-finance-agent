@@ -16,9 +16,11 @@ from app.models.journal import JournalEntry, JournalLine
 from app.models.raw_transaction import RawTransaction
 from app.schemas.account import AccountRead
 from app.schemas.api_responses import (
+    CountResult,
     JournalEntryWithLines,
     JournalPageResponse,
     ManualJournalEntryCreate,
+    OperationResult,
 )
 from app.schemas.document import DocumentRead
 from app.schemas.journal import JournalEntryRead, JournalLineRead
@@ -104,35 +106,40 @@ async def get_journal_page(
     )
 
 
-@router.post("/periods/{period_id}/classify")
+@router.post("/periods/{period_id}/classify", response_model=CountResult)
 async def classify_transactions(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
     classifier_agent: Agent = Depends(get_classifier_agent),
-) -> dict:
+) -> CountResult:
     period = await period_service.get_period(db, period_id)
     if period is None:
         raise HTTPException(status_code=404, detail="Period not found")
     try:
         count = await classify_service.classify_period(db, period_id, classifier_agent)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"classified": count}
+        logger.error("Classification failed for period %s: %s", period_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Classification failed") from exc
+    logger.info("Classified %d transactions for period %s", count, period_id)
+    return CountResult(count=count)
 
 
-@router.post("/periods/{period_id}/post")
+@router.post("/periods/{period_id}/post", response_model=CountResult)
 async def post_transactions(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-) -> dict:
+) -> CountResult:
     period = await period_service.get_period(db, period_id)
     if period is None:
         raise HTTPException(status_code=404, detail="Period not found")
+    if period.status != "pending_close":
+        raise HTTPException(status_code=400, detail="Posting is only allowed in the journal phase (pending_close)")
     try:
         count = await journal_service.post_period(db, period_id)
     except journal_service.JournalError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"posted": count}
+    logger.info("Posted %d transactions for period %s", count, period_id)
+    return CountResult(count=count)
 
 
 @router.post("/periods/{period_id}/journal/entries", response_model=JournalEntryWithLines, status_code=status.HTTP_201_CREATED)
@@ -169,15 +176,16 @@ async def create_manual_journal_entry(
 
     lines_result = await db.scalars(select(JournalLine).where(JournalLine.entry_id == entry.entry_id))
     lines_by_entry: dict = {entry.entry_id: list(lines_result.all())}
+    logger.info("Created manual journal entry %s for period %s", entry.entry_id, period_id)
     return _build_entry_with_lines(entry, lines_by_entry)
 
 
-@router.delete("/periods/{period_id}/journal/entries/{entry_id}")
+@router.delete("/periods/{period_id}/journal/entries/{entry_id}", response_model=OperationResult)
 async def delete_journal_entry(
     period_id: uuid.UUID,
     entry_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-) -> dict:
+) -> OperationResult:
     period = await period_service.get_period(db, period_id)
     if period is None:
         raise HTTPException(status_code=404, detail="Period not found")
@@ -187,4 +195,5 @@ async def delete_journal_entry(
         await journal_service.delete_entry(db, entry_id, period_id)
     except journal_service.JournalError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"ok": True}
+    logger.info("Deleted journal entry %s from period %s", entry_id, period_id)
+    return OperationResult(ok=True)

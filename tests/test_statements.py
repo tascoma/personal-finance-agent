@@ -187,44 +187,50 @@ async def client(session_factory):
 
 
 @pytest.mark.asyncio
-async def test_statements_page_renders_empty(client):
-    response = await client.get("/ledger/statements")
+async def test_balance_sheet_endpoint_renders_empty(client):
+    response = await client.get("/api/v1/statements/balance-sheet")
     assert response.status_code == 200
-    assert "Balance Sheet" in response.text
-    assert "Income Statement" in response.text
-    assert "Cashflows" in response.text
+    data = response.json()
+    assert "assets" in data
+    assert "liabilities" in data
+    assert "equity" in data
 
 
 @pytest.mark.asyncio
-async def test_statements_page_renders_with_data(client, session_factory):
+async def test_income_statement_endpoint_renders_with_data(client, session_factory):
     await _seed_period_with_entries(session_factory, 2026, 1)
-    response = await client.get("/ledger/statements")
+    response = await client.get("/api/v1/statements/income")
     assert response.status_code == 200
-    assert "Checking" in response.text
-    assert "2850.00" in response.text  # net cash / total assets
+    data = response.json()
+    assert data["total_income"] == "3000.00"
+    assert data["total_expenses"] == "150.00"
+    assert data["net_income"] == "2850.00"
 
 
 @pytest.mark.asyncio
-async def test_statements_period_filter(client, session_factory):
+async def test_income_statement_period_filter(client, session_factory):
     period = await _seed_period_with_entries(session_factory, 2026, 1)
-    response = await client.get(f"/ledger/statements?period_id={period.period_id}")
+    response = await client.get(f"/api/v1/statements/income?period_id={period.period_id}")
     assert response.status_code == 200
-    assert "January 2026" in response.text
+    data = response.json()
+    assert data["total_income"] == "3000.00"
 
 
 @pytest.mark.asyncio
-async def test_statements_invalid_period_falls_back_to_aggregate(client):
-    response = await client.get("/ledger/statements?period_id=not-a-uuid")
+async def test_income_statement_aggregate_when_no_period_filter(client, session_factory):
+    await _seed_period_with_entries(session_factory, 2026, 1)
+    response = await client.get("/api/v1/statements/income")
     assert response.status_code == 200
-    assert "All periods" in response.text
+    data = response.json()
+    assert data["range_label"] == "All Periods"
 
 
 @pytest.mark.asyncio
-async def test_statements_tab_query_preserved(client):
-    response = await client.get("/ledger/statements?tab=cashflows")
+async def test_cashflow_endpoint_renders(client, session_factory):
+    await _seed_period_with_entries(session_factory, 2026, 1)
+    response = await client.get("/api/v1/statements/cashflow")
     assert response.status_code == 200
-    # When the cashflows tab is active, its panel should not be hidden
-    # while balance_sheet's panel should be.
-    text = response.text
-    assert 'id="tab-cashflows" style="">' in text
-    assert 'id="tab-balance_sheet" style="display:none;">' in text
+    data = response.json()
+    assert "operating_total" in data
+    assert "net_change_in_cash" in data
+    assert data["net_change_in_cash"] == "2850.00"

@@ -168,7 +168,7 @@ async def analyze_reconciliation(
     if gaps:
         try:
             result = await recon_agent.run(gaps)
-            analysis = result.data
+            analysis = result.output
         except Exception as exc:
             logger.error("Reconciliation analysis failed: %s", exc, exc_info=True)
             raise HTTPException(status_code=500, detail=str(exc)) from exc

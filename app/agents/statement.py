@@ -15,7 +15,6 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from app.core.config import settings
 
-STATEMENT_AGENT_MODEL = "claude-sonnet-4-6"
 
 SYSTEM_PROMPT = (
     "You extract transaction rows from a bank or credit card statement. "
@@ -45,7 +44,7 @@ def build_statement_extractor() -> Agent:
     via FastAPI dependency overrides before any real call happens.
     """
     model = AnthropicModel(
-        STATEMENT_AGENT_MODEL,
+        settings.anthropic_model,
         provider=AnthropicProvider(api_key=settings.anthropic_api_key),
     )
     return Agent(

@@ -11,7 +11,7 @@ from app.dependencies import get_db_session
 from app.models.account import Account
 from app.models.raw_transaction import RawTransaction
 from app.models.review_queue import ReviewQueue
-from app.schemas.api_responses import AccountCodeRequest, ManualTransactionBatch
+from app.schemas.api_responses import AccountCodeRequest, CountResult, ManualTransactionBatch, OperationResult
 from app.schemas.raw_transaction import RawTransactionRead
 from app.services import document as document_service
 from app.services import period as period_service
@@ -78,6 +78,7 @@ async def add_manual_transactions(
     await db.commit()
     for txn in created:
         await db.refresh(txn)
+    logger.info("Added %d manual transaction(s) for period %s", len(created), period_id)
     return [RawTransactionRead.model_validate(t) for t in created]
 
 
@@ -111,26 +112,27 @@ async def unapprove_transaction(
     return RawTransactionRead.model_validate(txn)
 
 
-@router.delete("/periods/{period_id}/transactions/{txn_id}")
+@router.delete("/periods/{period_id}/transactions/{txn_id}", response_model=OperationResult)
 async def reject_transaction(
     period_id: uuid.UUID,
     txn_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-) -> dict:
+) -> OperationResult:
     txn = await db.get(RawTransaction, txn_id)
     if txn is None or txn.period_id != period_id:
         raise HTTPException(status_code=404, detail="Transaction not found")
     await db.execute(delete(ReviewQueue).where(ReviewQueue.raw_txn_id == txn_id))
     await db.delete(txn)
     await db.commit()
-    return {"ok": True}
+    logger.info("Rejected transaction %s in period %s", txn_id, period_id)
+    return OperationResult(ok=True)
 
 
-@router.post("/periods/{period_id}/transactions/approve-all-staged")
+@router.post("/periods/{period_id}/transactions/approve-all-staged", response_model=CountResult)
 async def approve_all_staged(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-) -> dict:
+) -> CountResult:
     staged = await db.scalars(
         select(RawTransaction).where(
             RawTransaction.period_id == period_id,
@@ -142,14 +144,15 @@ async def approve_all_staged(
         txn.status = "approved"
         updated += 1
     await db.commit()
-    return {"updated": updated}
+    logger.info("Approved all %d staged transactions for period %s", updated, period_id)
+    return CountResult(count=updated)
 
 
-@router.post("/periods/{period_id}/transactions/unapprove-all")
+@router.post("/periods/{period_id}/transactions/unapprove-all", response_model=CountResult)
 async def unapprove_all(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-) -> dict:
+) -> CountResult:
     approved = await db.scalars(
         select(RawTransaction).where(
             RawTransaction.period_id == period_id,
@@ -161,14 +164,15 @@ async def unapprove_all(
         txn.status = "staged"
         updated += 1
     await db.commit()
-    return {"updated": updated}
+    logger.info("Unapproved all %d transactions for period %s", updated, period_id)
+    return CountResult(count=updated)
 
 
-@router.post("/periods/{period_id}/transactions/reject-all-staged")
+@router.post("/periods/{period_id}/transactions/reject-all-staged", response_model=CountResult)
 async def reject_all_staged(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-) -> dict:
+) -> CountResult:
     staged_ids_result = await db.scalars(
         select(RawTransaction.raw_txn_id).where(
             RawTransaction.period_id == period_id,
@@ -181,14 +185,15 @@ async def reject_all_staged(
         await db.execute(delete(ReviewQueue).where(ReviewQueue.raw_txn_id.in_(staged_ids)))
         await db.execute(delete(RawTransaction).where(RawTransaction.raw_txn_id.in_(staged_ids)))
         await db.commit()
-    return {"deleted": deleted}
+    logger.info("Rejected all %d staged transactions for period %s", deleted, period_id)
+    return CountResult(count=deleted)
 
 
-@router.post("/periods/{period_id}/transactions/clear-all")
+@router.post("/periods/{period_id}/transactions/clear-all", response_model=CountResult)
 async def clear_all_transactions(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
-) -> dict:
+) -> CountResult:
     txn_ids_result = await db.scalars(
         select(RawTransaction.raw_txn_id).where(
             RawTransaction.period_id == period_id,
@@ -201,7 +206,8 @@ async def clear_all_transactions(
         await db.execute(delete(ReviewQueue).where(ReviewQueue.raw_txn_id.in_(txn_ids)))
         await db.execute(delete(RawTransaction).where(RawTransaction.raw_txn_id.in_(txn_ids)))
         await db.commit()
-    return {"deleted": deleted}
+    logger.info("Cleared all %d transactions for period %s", deleted, period_id)
+    return CountResult(count=deleted)
 
 
 @router.patch("/periods/{period_id}/transactions/{txn_id}/account", response_model=RawTransactionRead)

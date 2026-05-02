@@ -10,7 +10,7 @@ import hashlib
 import logging
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Sequence
@@ -19,20 +19,9 @@ from pydantic_ai import Agent
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.mortgage import (
-    MORTGAGE_AGENT_MODEL,
-    ExtractedMortgage,
-)
-from app.agents.paystub import (
-    PAYSTUB_AGENT_MODEL,
-    ExtractedPaystubs,
-    PaystubLine,
-)
-from app.agents.statement import (
-    STATEMENT_AGENT_MODEL,
-    ExtractedStatement,
-    ExtractedTxn,
-)
+from app.agents.mortgage import ExtractedMortgage
+from app.agents.paystub import ExtractedPaystubs, PaystubLine
+from app.agents.statement import ExtractedStatement, ExtractedTxn
 from app.core.config import settings
 from app.models.account import Account
 from app.models.document import Document
@@ -162,7 +151,7 @@ async def parse_document(
             await db.commit()
             raise ParseError(f"Unexpected parse failure: {exc}") from exc
         document.parse_status = "complete"
-        document.parsed_at = datetime.utcnow()
+        document.parsed_at = datetime.now(timezone.utc)
         document.llm_model = None
         await db.commit()
         logger.info(
@@ -200,7 +189,7 @@ async def parse_document(
         raise ParseError(f"Unexpected parse failure: {exc}") from exc
 
     document.parse_status = "complete"
-    document.parsed_at = datetime.utcnow()
+    document.parsed_at = datetime.now(timezone.utc)
     document.llm_model = llm_model
     await db.commit()
     logger.info(
@@ -274,7 +263,7 @@ async def _extract_transactions(
         result = await paystub_agent.run(text)
         extracted: ExtractedPaystubs = result.output
         prepared = await _prepare_paystub_lines(db, extracted, document.source_account_code)
-        return prepared, PAYSTUB_AGENT_MODEL
+        return prepared, settings.anthropic_model
 
     if doc_type == "mortgage_statement":
         if extension != ".pdf":
@@ -284,7 +273,7 @@ async def _extract_transactions(
         result = await mortgage_agent.run(text)
         extracted_mortgage: ExtractedMortgage = result.output
         prepared = _prepare_mortgage_lines(extracted_mortgage, document.period_id)
-        return prepared, MORTGAGE_AGENT_MODEL
+        return prepared, settings.anthropic_model
 
     # All other types follow the statement shape regardless of upstream tag.
     if extension == ".csv":
@@ -309,7 +298,7 @@ async def _extract_transactions(
         prepared = await _prepare_statement_txns(
             db, extracted_stmt.transactions, document.source_account_code
         )
-        return prepared, STATEMENT_AGENT_MODEL
+        return prepared, settings.anthropic_model
 
     raise ParseError(f"Unsupported extension: {extension}")
 

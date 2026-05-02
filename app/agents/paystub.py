@@ -16,7 +16,6 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from app.core.config import settings
 
-PAYSTUB_AGENT_MODEL = "claude-sonnet-4-6"
 
 SYSTEM_PROMPT = (
     "Extract ALL pay periods found in the document — some paystubs include "
@@ -49,7 +48,7 @@ class ExtractedPaystubs(BaseModel):
 def build_paystub_extractor() -> Agent:
     """Build the paystub extractor lazily; see `statement.build_statement_extractor`."""
     model = AnthropicModel(
-        PAYSTUB_AGENT_MODEL,
+        settings.anthropic_model,
         provider=AnthropicProvider(api_key=settings.anthropic_api_key),
     )
     return Agent(

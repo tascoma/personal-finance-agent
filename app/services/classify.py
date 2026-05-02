@@ -80,8 +80,16 @@ async def classify_period(
 
     all_suggestions: list = []
     batch_size = 25
-    for batch_start in range(0, len(txn_inputs), batch_size):
+    total_batches = (len(txn_inputs) + batch_size - 1) // batch_size
+    for batch_num, batch_start in enumerate(range(0, len(txn_inputs), batch_size), start=1):
         batch = txn_inputs[batch_start : batch_start + batch_size]
+        logger.info(
+            "Classifying batch %d/%d (%d txns) for period %s",
+            batch_num,
+            total_batches,
+            len(batch),
+            period_id,
+        )
         user_prompt = (
             f"Chart of accounts:\n{coa_table}\n\n"
             f"Transactions to classify:\n{_format_txn_inputs(batch)}"
@@ -90,14 +98,19 @@ async def classify_period(
             result = await classifier_agent.run(user_prompt)
         except Exception:
             logger.error(
-                "Classifier agent call failed for period %s (batch %d-%d of %d)",
+                "Classifier agent call failed for period %s (batch %d/%d)",
                 period_id,
-                batch_start,
-                batch_start + len(batch) - 1,
-                len(eligible),
+                batch_num,
+                total_batches,
                 exc_info=True,
             )
             raise
+        logger.info(
+            "Batch %d/%d returned %d suggestions",
+            batch_num,
+            total_batches,
+            len(result.output.suggestions),
+        )
         all_suggestions.extend(result.output.suggestions)
 
     updated = 0
