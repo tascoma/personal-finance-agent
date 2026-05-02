@@ -151,6 +151,7 @@ export interface DashboardResponse {
   total_liabilities: string
   net_worth: string
   investing_cashflow: string
+  salary_income: string
   period_count: number
   has_data: boolean
   period_bars: PeriodBarPoint[]

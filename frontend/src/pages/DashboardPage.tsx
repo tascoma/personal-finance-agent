@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -9,6 +9,7 @@ import {
   Tooltip, Legend,
 } from 'chart.js'
 import { fetchDashboard } from '../api/dashboard'
+import { fetchPeriods } from '../api/periods'
 import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/EmptyState'
@@ -25,15 +26,53 @@ function kpiColor(val: string, positive: string, negative: string) {
 
 function fmtMoney(val: string) {
   const n = parseFloat(val)
-  if (n < 0) return `($${Math.abs(n).toFixed(2)})`
-  return `$${n.toFixed(2)}`
+  if (n < 0) return `($${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 
 export default function DashboardPage() {
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
+  const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null)
+
+  const { data: allPeriods } = useQuery({
+    queryKey: ['periods'],
+    queryFn: fetchPeriods,
+    staleTime: 60_000,
+  })
+
+  const closedPeriods = useMemo(
+    () => (allPeriods ?? []).filter((p) => p.status === 'closed'),
+    [allPeriods],
+  )
+
+  const availableYears = useMemo(
+    () => [...new Set(closedPeriods.map((p) => parseInt(p.period_start.slice(0, 4), 10)))].sort((a, b) => b - a),
+    [closedPeriods],
+  )
+
+  const periodsForYear = useMemo(
+    () => selectedYear == null ? [] : closedPeriods.filter((p) => parseInt(p.period_start.slice(0, 4), 10) === selectedYear),
+    [closedPeriods, selectedYear],
+  )
+
+  function handleYearChange(year: number | null) {
+    setSelectedYear(year)
+    setSelectedPeriodId(null)
+  }
+
+  const scopeLabel = useMemo(() => {
+    if (selectedPeriodId) {
+      const p = closedPeriods.find((p) => p.period_id === selectedPeriodId)
+      return p ? fmtPeriod(p.period_start) : fmtPeriod(selectedPeriodId)
+    }
+    if (selectedYear) return String(selectedYear)
+    return 'all periods'
+  }, [selectedPeriodId, selectedYear, closedPeriods])
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ['dashboard'],
-    queryFn: fetchDashboard,
+    queryKey: ['dashboard', selectedYear, selectedPeriodId],
+    queryFn: () => fetchDashboard(selectedYear ?? undefined, selectedPeriodId ?? undefined),
     staleTime: 30_000,
   })
 
@@ -62,7 +101,7 @@ export default function DashboardPage() {
     Chart.defaults.font.size = 12
 
     const moneyTick = (v: number | string) => `$${Number(v).toLocaleString()}`
-    const moneyTip  = (ctx: { parsed: { y?: number; x?: number } }) => {
+    const moneyTip  = (ctx: { parsed: { y?: number | null; x?: number | null } }) => {
       const n = ctx.parsed.y ?? ctx.parsed.x ?? 0
       return ` $${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
     }
@@ -86,11 +125,15 @@ export default function DashboardPage() {
     }
 
     if (nwRef.current && data.net_worth_series.length) {
+      const ctx2d = nwRef.current.getContext('2d')!
+      const gradient = ctx2d.createLinearGradient(0, 0, 0, nwRef.current.clientHeight || 180)
+      gradient.addColorStop(0, accent + '55')
+      gradient.addColorStop(1, accent + '00')
       chartRefs.current.push(new Chart(nwRef.current, {
         type: 'line',
         data: {
           labels: data.net_worth_series.map((d) => d.period_label),
-          datasets: [{ label: 'Net Worth', data: data.net_worth_series.map((d) => parseFloat(d.net_worth)), borderColor: accent, backgroundColor: accent + '18', borderWidth: 2, pointBackgroundColor: accent, pointRadius: 4, fill: true, tension: 0.35 }],
+          datasets: [{ label: 'Net Worth', data: data.net_worth_series.map((d) => parseFloat(d.net_worth)), borderColor: accent, backgroundColor: gradient, borderWidth: 2, pointBackgroundColor: accent, pointRadius: 4, fill: true, tension: 0.35 }],
         },
         options: {
           responsive: true, maintainAspectRatio: true,
@@ -135,6 +178,37 @@ export default function DashboardPage() {
         )}
       />
 
+      {availableYears.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <select
+            className="inp"
+            style={{ width: 130 }}
+            value={selectedYear ?? ''}
+            onChange={(e) => handleYearChange(e.target.value ? parseInt(e.target.value, 10) : null)}
+          >
+            <option value="">All years</option>
+            {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select
+            className="inp"
+            style={{ width: 160 }}
+            value={selectedPeriodId ?? ''}
+            disabled={selectedYear == null}
+            onChange={(e) => setSelectedPeriodId(e.target.value || null)}
+          >
+            <option value="">All periods</option>
+            {periodsForYear.map((p) => (
+              <option key={p.period_id} value={p.period_id}>{fmtPeriod(p.period_start)}</option>
+            ))}
+          </select>
+          {(selectedYear != null || selectedPeriodId != null) && (
+            <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedYear(null); setSelectedPeriodId(null) }}>
+              Clear ×
+            </button>
+          )}
+        </div>
+      )}
+
       {!data.has_data && !data.active_period ? (
         <div className="card">
           <EmptyState icon="periods" message="No open period yet." hint="Create a period to start tracking your finances.">
@@ -147,38 +221,38 @@ export default function DashboardPage() {
             <div className="kpi-card">
               <div className="kpi-label">Total Income</div>
               <div className="kpi-value" style={{ color: 'var(--green)', fontSize: 22 }}>{fmtMoney(data.total_income)}</div>
-              <div className="kpi-sub">all periods</div>
+              <div className="kpi-sub">{scopeLabel}</div>
             </div>
             <div className="kpi-card">
               <div className="kpi-label">Total Expenses</div>
               <div className="kpi-value" style={{ color: 'var(--red)', fontSize: 22 }}>{fmtMoney(data.total_expenses)}</div>
-              <div className="kpi-sub">all periods</div>
+              <div className="kpi-sub">{scopeLabel}</div>
             </div>
             <div className="kpi-card">
               <div className="kpi-label">Net Income</div>
               <div className="kpi-value" style={{ color: kpiColor(data.net_income, 'var(--green)', 'var(--red)'), fontSize: 22 }}>{fmtMoney(data.net_income)}</div>
-              <div className="kpi-sub">income − expenses</div>
+              <div className="kpi-sub">{scopeLabel}</div>
             </div>
             <div className="kpi-card">
               <div className="kpi-label">Total Assets</div>
               <div className="kpi-value" style={{ color: 'var(--accent)', fontSize: 22 }}>{fmtMoney(data.total_assets)}</div>
-              <div className="kpi-sub">balance sheet</div>
+              <div className="kpi-sub">{scopeLabel}</div>
             </div>
             <div className="kpi-card">
               <div className="kpi-label">Net Worth</div>
               <div className="kpi-value" style={{ color: kpiColor(data.net_worth, 'var(--accent)', 'var(--red)'), fontSize: 22 }}>{fmtMoney(data.net_worth)}</div>
-              <div className="kpi-sub">assets − liabilities</div>
+              <div className="kpi-sub">{scopeLabel}</div>
             </div>
             {(() => {
-              const income = parseFloat(data.total_income)
+              const salary = parseFloat(data.salary_income)
               const inv = parseFloat(data.investing_cashflow)
-              const pct = income !== 0 ? (inv / income) * 100 : 0
+              const pct = salary !== 0 ? (Math.abs(inv) / salary) * 100 : 0
               const color = pct >= 0 ? 'var(--green)' : 'var(--red)'
               return (
                 <div className="kpi-card">
-                  <div className="kpi-label">Invest Cashflow</div>
+                  <div className="kpi-label">Savings Rate</div>
                   <div className="kpi-value" style={{ color, fontSize: 22 }}>{pct.toFixed(1)}%</div>
-                  <div className="kpi-sub">of total income</div>
+                  <div className="kpi-sub">of salary income</div>
                 </div>
               )
             })()}
@@ -229,7 +303,7 @@ export default function DashboardPage() {
                         <td className="color-text3" style={{ fontSize: 12 }}>{e.period_label}</td>
                         <td className="mono color-text3" style={{ fontSize: 12 }}>{e.entry_date}</td>
                         <td><span className="badge badge--parsed" style={{ fontSize: 11 }}>{e.source_type}</span></td>
-                        <td className="mono text-right">${parseFloat(e.total_debit).toFixed(2)}</td>
+                        <td className="mono text-right">${parseFloat(e.total_debit).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       </tr>
                     ))}
                   </tbody>

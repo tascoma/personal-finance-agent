@@ -84,7 +84,7 @@ export default function Sidebar({ activePeriod }: Props) {
           <li key={item.to}>
             <NavLink
               to={item.to}
-              end={item.to === '/' || item.to === '/ledger/statements'}
+              end={item.to === '/' || item.to === '/ledger/statements' || item.to === '/ledger'}
               className={({ isActive }) =>
                 `nav-link${isActive ? ' nav-link--active' : ''}`
               }
