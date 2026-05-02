@@ -16,7 +16,6 @@ from pydantic_ai.providers.anthropic import AnthropicProvider
 
 from app.core.config import settings
 
-MORTGAGE_AGENT_MODEL = "claude-sonnet-4-6"
 
 SYSTEM_PROMPT = (
     "Extract the payment breakdown from a mortgage statement. "
@@ -50,7 +49,7 @@ class ExtractedMortgage(BaseModel):
 def build_mortgage_extractor() -> Agent:
     """Build the mortgage extractor lazily; see `statement.build_statement_extractor`."""
     model = AnthropicModel(
-        MORTGAGE_AGENT_MODEL,
+        settings.anthropic_model,
         provider=AnthropicProvider(api_key=settings.anthropic_api_key),
     )
     return Agent(

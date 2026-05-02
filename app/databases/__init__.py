@@ -9,7 +9,11 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-engine = create_async_engine(settings.database_url, echo=False)
+engine = create_async_engine(
+    settings.database_url,
+    echo=settings.db_echo,
+    pool_pre_ping=settings.db_pool_pre_ping,
+)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
@@ -33,7 +37,7 @@ _ACCOUNTS_SEED = [
     (110101, "EJ – Brokerage (Single Account)",    "Asset",       "Investments",                          "debit",  None,                      False),
     (110102, "Computer Share – ASPP",              "Asset",       "Investments",                          "debit",  "CO STK CONT|STOCK PURCH", False),
     (110103, "Coinbase – Crypto",                  "Asset",       "Investments",                          "debit",  None,                      False),
-    (111101, "EJ – Roth IRA",                      "Asset",       "Investments",                          "debit",  None,                      False),
+    (111101, "EJ – Roth IRA",                      "Asset",       "Retirement & Tax-Advantaged Accounts", "debit",  None,                      False),
     (111102, "Merrill – Roth 401(k)",              "Asset",       "Retirement & Tax-Advantaged Accounts", "debit",  "ROTH 401K",               False),
     (111103, "HSA – Investments",                  "Asset",       "Retirement & Tax-Advantaged Accounts", "debit",  None,                      False),
     (112101, "Fidelity – RSUs (Vested)",           "Asset",       "Investments",                          "debit",  None,                      False),
@@ -126,7 +130,7 @@ async def init_db() -> None:
     from app.models import (  # noqa: F401 — import triggers Base registration
         Account, Period, Document, RawTransaction,
         JournalEntry, JournalLine, StatedBalance,
-        Reconciliation, ReviewQueue, MemoBalance,
+        Reconciliation, ReviewQueue,
     )
 
     async with engine.begin() as conn:

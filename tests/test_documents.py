@@ -37,9 +37,7 @@ async def client(session_factory):
 
     app.dependency_overrides[get_db_session] = override_get_db_session
     transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport, base_url="http://test", follow_redirects=True
-    ) as c:
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
 
@@ -65,17 +63,18 @@ async def test_upload_pdf_success(client: AsyncClient, session_factory, open_per
     files = {"file": ("statement.pdf", BytesIO(b"%PDF-1.4 dummy"), "application/pdf")}
     data = {"document_type": "bank_statement"}
     response = await client.post(
-        f"/periods/{open_period.period_id}/documents",
+        f"/api/v1/periods/{open_period.period_id}/documents",
         data=data,
         files=files,
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
+    body = response.json()
+    assert body["parse_status"] == "pending"
+    assert body["file_name"] == "statement.pdf"
 
     async with session_factory() as session:
         doc = await session.scalar(select(Document))
     assert doc is not None
-    assert doc.parse_status == "pending"
-    assert doc.file_name == "statement.pdf"
     assert Path(doc.file_path).exists()
 
 
@@ -84,16 +83,12 @@ async def test_upload_mortgage_statement(client: AsyncClient, session_factory, o
     files = {"file": ("mortgage.pdf", BytesIO(b"%PDF-1.4 dummy"), "application/pdf")}
     data = {"document_type": "mortgage_statement"}
     response = await client.post(
-        f"/periods/{open_period.period_id}/documents",
+        f"/api/v1/periods/{open_period.period_id}/documents",
         data=data,
         files=files,
     )
-    assert response.status_code == 200
-
-    async with session_factory() as session:
-        doc = await session.scalar(select(Document))
-    assert doc is not None
-    assert doc.document_type == "mortgage_statement"
+    assert response.status_code == 201
+    assert response.json()["document_type"] == "mortgage_statement"
 
 
 @pytest.mark.asyncio
@@ -103,12 +98,12 @@ async def test_upload_rejects_invalid_extension(
     files = {"file": ("notes.txt", BytesIO(b"hello"), "text/plain")}
     data = {"document_type": "manual"}
     response = await client.post(
-        f"/periods/{open_period.period_id}/documents",
+        f"/api/v1/periods/{open_period.period_id}/documents",
         data=data,
         files=files,
     )
-    assert response.status_code == 200
-    assert "Unsupported file extension" in response.text
+    assert response.status_code == 400
+    assert "Unsupported file extension" in response.json()["detail"]
 
     async with session_factory() as session:
         count = await session.scalar(select(Document))
@@ -122,12 +117,12 @@ async def test_upload_rejects_invalid_document_type(
     files = {"file": ("statement.pdf", BytesIO(b"%PDF"), "application/pdf")}
     data = {"document_type": "not_a_type"}
     response = await client.post(
-        f"/periods/{open_period.period_id}/documents",
+        f"/api/v1/periods/{open_period.period_id}/documents",
         data=data,
         files=files,
     )
-    assert response.status_code == 200
-    assert "Invalid document_type" in response.text
+    assert response.status_code == 400
+    assert "Invalid document_type" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -138,11 +133,11 @@ async def test_upload_duplicate_filename_gets_suffix(
     for _ in range(2):
         files = {"file": ("file.csv", BytesIO(b"a,b\n1,2\n"), "text/csv")}
         response = await client.post(
-            f"/periods/{open_period.period_id}/documents",
+            f"/api/v1/periods/{open_period.period_id}/documents",
             data=data,
             files=files,
         )
-        assert response.status_code == 200
+        assert response.status_code == 201
 
     async with session_factory() as session:
         result = await session.scalars(select(Document))
@@ -164,12 +159,12 @@ async def test_upload_blocked_when_period_not_open(
     files = {"file": ("statement.pdf", BytesIO(b"%PDF"), "application/pdf")}
     data = {"document_type": "bank_statement"}
     response = await client.post(
-        f"/periods/{open_period.period_id}/documents",
+        f"/api/v1/periods/{open_period.period_id}/documents",
         data=data,
         files=files,
     )
-    assert response.status_code == 200
-    assert "open period" in response.text
+    assert response.status_code == 400
+    assert "open period" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -177,7 +172,7 @@ async def test_delete_document(client: AsyncClient, session_factory, open_period
     files = {"file": ("statement.pdf", BytesIO(b"%PDF"), "application/pdf")}
     data = {"document_type": "bank_statement"}
     await client.post(
-        f"/periods/{open_period.period_id}/documents", data=data, files=files
+        f"/api/v1/periods/{open_period.period_id}/documents", data=data, files=files
     )
 
     async with session_factory() as session:
@@ -186,10 +181,11 @@ async def test_delete_document(client: AsyncClient, session_factory, open_period
     file_path = Path(doc.file_path)
     assert file_path.exists()
 
-    response = await client.post(
-        f"/periods/{open_period.period_id}/documents/{doc.document_id}/delete"
+    response = await client.delete(
+        f"/api/v1/periods/{open_period.period_id}/documents/{doc.document_id}"
     )
     assert response.status_code == 200
+    assert response.json() == {"ok": True}
 
     async with session_factory() as session:
         remaining = await session.scalar(select(Document))

@@ -261,23 +261,26 @@ async def client(session_factory):
 
 @pytest.mark.asyncio
 async def test_journal_page_renders(client, journal_period):
-    response = await client.get(f"/periods/{journal_period.period_id}/journal")
+    response = await client.get(f"/api/v1/periods/{journal_period.period_id}/journal")
     assert response.status_code == 200
-    assert "Ledger" in response.text
+    data = response.json()
+    assert "period" in data
+    assert "staged" in data
+    assert "approved" in data
 
 
 @pytest.mark.asyncio
-async def test_classify_route_redirects_to_journal(client, journal_period):
-    response = await client.post(f"/periods/{journal_period.period_id}/classify")
+async def test_classify_route_returns_count(client, journal_period):
+    response = await client.post(f"/api/v1/periods/{journal_period.period_id}/classify")
     assert response.status_code == 200
-    assert "Ledger" in response.text
+    assert "count" in response.json()
 
 
 @pytest.mark.asyncio
-async def test_classify_route_blocked_outside_journal_phase(client, open_period):
-    response = await client.post(f"/periods/{open_period.period_id}/classify")
+async def test_classify_route_returns_zero_when_nothing_to_classify(client, open_period):
+    response = await client.post(f"/api/v1/periods/{open_period.period_id}/classify")
     assert response.status_code == 200
-    assert "journal phase" in response.text.lower()
+    assert response.json() == {"count": 0}
 
 
 @pytest.mark.asyncio
@@ -298,20 +301,21 @@ async def test_approve_reject_route(client, journal_period, session_factory):
     txn = await _add_staged_txn(session_factory, doc, "MARKET", Decimal("-30.00"))
 
     response = await client.post(
-        f"/periods/{journal_period.period_id}/transactions/{txn.raw_txn_id}/approve"
+        f"/api/v1/periods/{journal_period.period_id}/transactions/{txn.raw_txn_id}/approve"
     )
     assert response.status_code == 200
     async with session_factory() as session:
         updated = await session.get(RawTransaction, txn.raw_txn_id)
     assert updated.status == "approved"
 
-    response = await client.post(
-        f"/periods/{journal_period.period_id}/transactions/{txn.raw_txn_id}/reject"
+    response = await client.delete(
+        f"/api/v1/periods/{journal_period.period_id}/transactions/{txn.raw_txn_id}"
     )
     assert response.status_code == 200
+    assert response.json() == {"ok": True}
     async with session_factory() as session:
-        updated = await session.get(RawTransaction, txn.raw_txn_id)
-    assert updated.status == "rejected"
+        remaining = await session.get(RawTransaction, txn.raw_txn_id)
+    assert remaining is None
 
 
 @pytest.mark.asyncio
@@ -331,9 +335,9 @@ async def test_update_account_route(client, journal_period, session_factory):
 
     txn = await _add_staged_txn(session_factory, doc, "SHOP", Decimal("-12.00"))
 
-    response = await client.post(
-        f"/periods/{journal_period.period_id}/transactions/{txn.raw_txn_id}/account",
-        data={"account_code": "520101"},
+    response = await client.patch(
+        f"/api/v1/periods/{journal_period.period_id}/transactions/{txn.raw_txn_id}/account",
+        json={"account_code": 520101},
     )
     assert response.status_code == 200
     async with session_factory() as session:

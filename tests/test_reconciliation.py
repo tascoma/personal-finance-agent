@@ -464,17 +464,22 @@ async def client(session_factory):
 @pytest.mark.asyncio
 async def test_reconcile_page_renders(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
-    response = await client.get(f"/periods/{period.period_id}/reconcile")
+    response = await client.get(f"/api/v1/periods/{period.period_id}/reconcile")
     assert response.status_code == 200
-    assert "Reconciliation" in response.text
+    data = response.json()
+    assert "period" in data
+    assert "details" in data
+    assert "ran" in data
 
 
 @pytest.mark.asyncio
 async def test_reconcile_page_empty_before_run(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
-    response = await client.get(f"/periods/{period.period_id}/reconcile")
+    response = await client.get(f"/api/v1/periods/{period.period_id}/reconcile")
     assert response.status_code == 200
-    assert "Run Reconciliation" in response.text
+    data = response.json()
+    assert data["ran"] is False
+    assert data["details"] == []
 
 
 @pytest.mark.asyncio
@@ -482,7 +487,7 @@ async def test_post_reconcile_creates_rows(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     await _set_stated_balance(session_factory, period.period_id, 100101, Decimal("500"))
 
-    response = await client.post(f"/periods/{period.period_id}/reconcile")
+    response = await client.post(f"/api/v1/periods/{period.period_id}/reconcile")
     assert response.status_code == 200
 
     async with session_factory() as s:
@@ -497,8 +502,8 @@ async def test_post_reconcile_idempotent(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     await _set_stated_balance(session_factory, period.period_id, 100101, Decimal("0"))
 
-    await client.post(f"/periods/{period.period_id}/reconcile")
-    await client.post(f"/periods/{period.period_id}/reconcile")
+    await client.post(f"/api/v1/periods/{period.period_id}/reconcile")
+    await client.post(f"/api/v1/periods/{period.period_id}/reconcile")
 
     async with session_factory() as s:
         rows = (await s.scalars(
@@ -512,11 +517,11 @@ async def test_post_unrealized_creates_journal_entry(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     await _set_stated_balance(session_factory, period.period_id, 110101, Decimal("10000"))
     # Run reconciliation first to create the Reconciliation row
-    await client.post(f"/periods/{period.period_id}/reconcile")
+    await client.post(f"/api/v1/periods/{period.period_id}/reconcile")
 
     response = await client.post(
-        f"/periods/{period.period_id}/reconcile/post-unrealized",
-        data={"account_code": "110101"},
+        f"/api/v1/periods/{period.period_id}/reconcile/post-unrealized",
+        json={"account_code": 110101},
     )
     assert response.status_code == 200
 
@@ -530,34 +535,34 @@ async def test_post_unrealized_creates_journal_entry(client, session_factory):
 async def test_analyze_renders_analysis(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     await _set_stated_balance(session_factory, period.period_id, 100101, Decimal("999"))
-    await client.post(f"/periods/{period.period_id}/reconcile")
+    await client.post(f"/api/v1/periods/{period.period_id}/reconcile")
 
-    response = await client.post(f"/periods/{period.period_id}/reconcile/analyze")
+    response = await client.post(f"/api/v1/periods/{period.period_id}/reconcile/analyze")
     assert response.status_code == 200
-    assert "AI Analysis" in response.text
-    assert "Minor timing difference detected" in response.text
+    data = response.json()
+    assert data["analysis"] is not None
+    assert "Minor timing difference detected" in data["analysis"]["overall_summary"]
 
 
 @pytest.mark.asyncio
-async def test_analyze_redirects_when_no_non_investment_gaps(client, session_factory):
-    """If all gaps are in investment accounts, analyze redirects to reconcile page."""
+async def test_analyze_returns_null_analysis_when_no_non_investment_gaps(client, session_factory):
+    """If all gaps are in investment accounts, analysis is null (no AI call needed)."""
     period = await _make_period(session_factory, 2026, 4)
     # Only investment account gap
     await _set_stated_balance(session_factory, period.period_id, 110101, Decimal("5000"))
-    await client.post(f"/periods/{period.period_id}/reconcile")
+    await client.post(f"/api/v1/periods/{period.period_id}/reconcile")
 
-    response = await client.post(f"/periods/{period.period_id}/reconcile/analyze")
-    # Should redirect to reconcile page (followed by client) — no AI Analysis section
+    response = await client.post(f"/api/v1/periods/{period.period_id}/reconcile/analyze")
     assert response.status_code == 200
-    assert "AI Analysis" not in response.text
+    assert response.json()["analysis"] is None
 
 
 @pytest.mark.asyncio
 async def test_close_period_via_status_route(client, session_factory):
     period = await _make_period(session_factory, 2026, 4)
     response = await client.post(
-        f"/periods/{period.period_id}/status",
-        data={"new_status": "closed"},
+        f"/api/v1/periods/{period.period_id}/status",
+        json={"new_status": "closed"},
     )
     assert response.status_code == 200
 
@@ -775,7 +780,7 @@ async def test_post_closing_route_creates_entry(client, session_factory):
         (100101, _ZERO, Decimal("150")),
     ])
 
-    response = await client.post(f"/periods/{period.period_id}/reconcile/post-closing")
+    response = await client.post(f"/api/v1/periods/{period.period_id}/reconcile/post-closing")
     assert response.status_code == 200
 
     async with session_factory() as s:
@@ -981,7 +986,7 @@ async def test_post_equity_rollup_route(client, session_factory):
     async with session_factory() as s:
         await recon_service.post_closing_entries(s, period.period_id)
 
-    response = await client.post(f"/periods/{period.period_id}/reconcile/post-equity-rollup")
+    response = await client.post(f"/api/v1/periods/{period.period_id}/reconcile/post-equity-rollup")
     assert response.status_code == 200
 
     async with session_factory() as s:

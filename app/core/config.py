@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -15,7 +16,23 @@ class Settings(BaseSettings):
     # Defaults to 300102 "Prior Period Net Worth" from the seed Chart of Accounts.
     opening_balance_equity_account_code: int = 300102
 
+    # Claude model applied to all agents; override via env to switch versions.
+    anthropic_model: str = "claude-sonnet-4-6"
+
+    # Database connection options
+    db_pool_pre_ping: bool = True
+    db_echo: bool = False
+
+    # Maximum file upload size in megabytes
+    max_upload_size_mb: int = 20
+
     model_config = {"env_file": ".env"}
+
+    @model_validator(mode="after")
+    def _check_production_secret(self) -> "Settings":
+        if self.app_env == "production" and self.secret_key == "changeme":
+            raise ValueError("SECRET_KEY must be set to a non-default value in production")
+        return self
 
 
 settings = Settings()

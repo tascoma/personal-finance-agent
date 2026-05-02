@@ -552,31 +552,32 @@ async def client(session_factory):
 
 
 @pytest.mark.asyncio
-async def test_parse_route_renders_completed_status(
+async def test_parse_route_returns_document_with_complete_status(
     client: AsyncClient, csv_document, open_period
 ):
     response = await client.post(
-        f"/periods/{open_period.period_id}/documents/{csv_document.document_id}/parse"
+        f"/api/v1/periods/{open_period.period_id}/documents/{csv_document.document_id}/parse"
     )
     assert response.status_code == 200
-    assert "complete" in response.text
+    assert response.json()["parse_status"] == "complete"
 
 
 @pytest.mark.asyncio
-async def test_transactions_page_lists_rows(
+async def test_transactions_list_rows(
     client: AsyncClient, csv_document, open_period
 ):
     await client.post(
-        f"/periods/{open_period.period_id}/documents/{csv_document.document_id}/parse"
+        f"/api/v1/periods/{open_period.period_id}/documents/{csv_document.document_id}/parse"
     )
-    response = await client.get(f"/periods/{open_period.period_id}/transactions")
+    response = await client.get(f"/api/v1/periods/{open_period.period_id}/transactions")
     assert response.status_code == 200
-    assert "COFFEE SHOP" in response.text
-    assert "DIRECT DEPOSIT" in response.text
+    descriptions = [t["description"] for t in response.json()]
+    assert any("COFFEE SHOP" in d for d in descriptions)
+    assert any("DIRECT DEPOSIT" in d for d in descriptions)
 
 
 @pytest.mark.asyncio
-async def test_parse_route_surfaces_error_for_closed_period(
+async def test_parse_route_blocked_for_non_open_period(
     client: AsyncClient, csv_document, open_period, session_factory
 ):
     async with session_factory() as session:
@@ -584,10 +585,9 @@ async def test_parse_route_surfaces_error_for_closed_period(
             session, open_period.period_id, "pending_review"
         )
     response = await client.post(
-        f"/periods/{open_period.period_id}/documents/{csv_document.document_id}/parse"
+        f"/api/v1/periods/{open_period.period_id}/documents/{csv_document.document_id}/parse"
     )
-    assert response.status_code == 200
-    assert "pending-close period" in response.text
+    assert response.status_code == 500
 
 
 # ── mortgage statement tests ──────────────────────────────────────────────────

@@ -14,6 +14,7 @@ from fastapi import UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.document import Document
 from app.models.period import Period
 
@@ -73,6 +74,9 @@ async def save_upload(
     destination = _unique_destination(directory, file_name)
 
     contents = await upload.read()
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    if len(contents) > max_bytes:
+        raise DocumentError(f"File exceeds maximum upload size of {settings.max_upload_size_mb} MB")
     destination.write_bytes(contents)
 
     document = Document(
@@ -140,13 +144,15 @@ async def update_source_account(
     db: AsyncSession,
     document_id: uuid.UUID,
     source_account_code: int | None,
-) -> None:
+) -> Document:
     document = await db.get(Document, document_id)
     if document is None:
         raise DocumentError("Document not found")
     document.source_account_code = source_account_code
     await db.commit()
+    await db.refresh(document)
     logger.info("Updated source account for document %s to %s", document_id, source_account_code)
+    return document
 
 
 async def delete_document(db: AsyncSession, document_id: uuid.UUID) -> None:

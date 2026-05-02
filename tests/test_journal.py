@@ -315,16 +315,19 @@ async def client(session_factory):
     app.dependency_overrides[get_db_session] = override_db
     app.dependency_overrides[get_classifier_agent] = noop_classifier
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=True) as c:
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
 async def test_journal_page_renders(client, journal_period):
-    response = await client.get(f"/periods/{journal_period.period_id}/journal")
+    response = await client.get(f"/api/v1/periods/{journal_period.period_id}/journal")
     assert response.status_code == 200
-    assert "Ledger" in response.text
+    data = response.json()
+    assert "period" in data
+    assert "staged" in data
+    assert "entries" in data
 
 
 @pytest.mark.asyncio
@@ -332,9 +335,9 @@ async def test_post_route_creates_entries(client, journal_period, session_factor
     doc = await _make_doc(session_factory, journal_period.period_id, source_code=100101)
     await _make_txn(session_factory, doc, "GROCERIES", Decimal("-40.00"), 520101)
 
-    response = await client.post(f"/periods/{journal_period.period_id}/post")
+    response = await client.post(f"/api/v1/periods/{journal_period.period_id}/post")
     assert response.status_code == 200
-    assert "Ledger" in response.text
+    assert response.json()["count"] == 1
 
     async with session_factory() as session:
         entries = (await session.scalars(select(JournalEntry))).all()
@@ -344,9 +347,9 @@ async def test_post_route_creates_entries(client, journal_period, session_factor
 @pytest.mark.asyncio
 async def test_post_route_blocked_outside_journal_phase(client, open_period):
     """POST /post is blocked when period is not pending_close."""
-    response = await client.post(f"/periods/{open_period.period_id}/post")
-    assert response.status_code == 200
-    assert "journal phase" in response.text.lower()
+    response = await client.post(f"/api/v1/periods/{open_period.period_id}/post")
+    assert response.status_code == 400
+    assert "journal phase" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
@@ -354,12 +357,12 @@ async def test_journal_page_shows_posted_entries(client, journal_period, session
     doc = await _make_doc(session_factory, journal_period.period_id, source_code=100101)
     await _make_txn(session_factory, doc, "COFFEE", Decimal("-5.00"), 520101)
 
-    await client.post(f"/periods/{journal_period.period_id}/post")
+    await client.post(f"/api/v1/periods/{journal_period.period_id}/post")
 
-    response = await client.get(f"/periods/{journal_period.period_id}/journal")
+    response = await client.get(f"/api/v1/periods/{journal_period.period_id}/journal")
     assert response.status_code == 200
-    assert "COFFEE" in response.text
-    assert "5.00" in response.text
+    data = response.json()
+    assert any("COFFEE" in e["description"] for e in data["entries"])
 
 
 # ── manual journal entry service tests ───────────────────────────────────────
@@ -475,18 +478,18 @@ async def test_delete_non_user_entry_raises(session_factory, open_period):
 @pytest.mark.asyncio
 async def test_create_manual_entry_route(client, open_period, session_factory):
     response = await client.post(
-        f"/periods/{open_period.period_id}/journal/entries",
-        data={
+        f"/api/v1/periods/{open_period.period_id}/journal/entries",
+        json={
             "entry_date": "2026-01-20",
             "description": "Prepaid Insurance",
             "source_type": "adjusting",
-            "account_code": ["100101", "520101"],
-            "debit": ["500.00", "0"],
-            "credit": ["0", "500.00"],
-            "memo": ["", "insurance"],
+            "lines": [
+                {"account_code": 100101, "debit": "500.00", "credit": "0", "memo": None},
+                {"account_code": 520101, "debit": "0", "credit": "500.00", "memo": "insurance"},
+            ],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
 
     async with session_factory() as session:
         entries = (await session.scalars(select(JournalEntry))).all()
@@ -498,19 +501,19 @@ async def test_create_manual_entry_route(client, open_period, session_factory):
 @pytest.mark.asyncio
 async def test_create_manual_entry_route_unbalanced(client, open_period):
     response = await client.post(
-        f"/periods/{open_period.period_id}/journal/entries",
-        data={
+        f"/api/v1/periods/{open_period.period_id}/journal/entries",
+        json={
             "entry_date": "2026-01-20",
             "description": "Bad",
             "source_type": "manual",
-            "account_code": ["100101", "520101"],
-            "debit": ["100.00", "0"],
-            "credit": ["0", "50.00"],
-            "memo": ["", ""],
+            "lines": [
+                {"account_code": 100101, "debit": "100.00", "credit": "0", "memo": None},
+                {"account_code": 520101, "debit": "0", "credit": "50.00", "memo": None},
+            ],
         },
     )
-    assert response.status_code == 200
-    assert "balance" in response.text.lower()
+    assert response.status_code == 400
+    assert "balance" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
@@ -528,10 +531,11 @@ async def test_delete_manual_entry_route(client, open_period, session_factory):
             ],
         )
 
-    response = await client.post(
-        f"/periods/{open_period.period_id}/journal/entries/{entry.entry_id}/delete"
+    response = await client.delete(
+        f"/api/v1/periods/{open_period.period_id}/journal/entries/{entry.entry_id}"
     )
     assert response.status_code == 200
+    assert response.json() == {"ok": True}
 
     async with session_factory() as session:
         assert await session.get(JournalEntry, entry.entry_id) is None
@@ -613,13 +617,13 @@ async def test_unpost_document_only_affects_target_document(session_factory, ope
 
 @pytest.mark.asyncio
 async def test_unpost_document_route(client, journal_period, session_factory):
-    """POST /unpost resets transactions and redirects to period detail."""
+    """POST /unpost removes staged/approved transactions from a document."""
     doc = await _make_doc(session_factory, journal_period.period_id, doc_type="credit_card", source_code=100101)
     await _make_txn(session_factory, doc, "CC CHARGE", Decimal("-50.00"), 520101)
-    await client.post(f"/periods/{journal_period.period_id}/post")
+    await client.post(f"/api/v1/periods/{journal_period.period_id}/post")
 
     response = await client.post(
-        f"/periods/{journal_period.period_id}/documents/{doc.document_id}/unpost"
+        f"/api/v1/periods/{journal_period.period_id}/documents/{doc.document_id}/unpost"
     )
     assert response.status_code == 200
 
@@ -632,11 +636,11 @@ async def test_unpost_document_route(client, journal_period, session_factory):
 
 
 @pytest.mark.asyncio
-async def test_unpost_document_route_blocked_outside_journal_phase(client, open_period, session_factory):
-    """Unpost route returns an error redirect when period is not pending_close."""
+async def test_unpost_document_route_no_staged_returns_zero(client, open_period, session_factory):
+    """Unpost with no staged/approved transactions returns count=0."""
     doc = await _make_doc(session_factory, open_period.period_id, source_code=100101)
     response = await client.post(
-        f"/periods/{open_period.period_id}/documents/{doc.document_id}/unpost"
+        f"/api/v1/periods/{open_period.period_id}/documents/{doc.document_id}/unpost"
     )
     assert response.status_code == 200
-    assert "journal phase" in response.text.lower()
+    assert response.json()["count"] == 0

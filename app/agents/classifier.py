@@ -2,7 +2,7 @@ import logging
 from decimal import Decimal
 from functools import lru_cache
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.anthropic import AnthropicModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
@@ -35,7 +35,7 @@ class TxnInput(BaseModel):
 class TxnSuggestion(BaseModel):
     id: str
     account_code: int
-    confidence: float
+    confidence: float = Field(..., ge=0, le=1)
     reasoning: str
 
 
@@ -47,7 +47,7 @@ class ClassifierOutput(BaseModel):
 def build_classifier_agent() -> Agent:
     """Cached so the module can be imported in tests without an API key."""
     model = AnthropicModel(
-        "claude-sonnet-4-6",
+        settings.anthropic_model,
         provider=AnthropicProvider(api_key=settings.anthropic_api_key),
     )
     return Agent(model, output_type=ClassifierOutput, system_prompt=_SYSTEM_PROMPT)

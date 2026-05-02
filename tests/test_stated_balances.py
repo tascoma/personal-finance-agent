@@ -165,40 +165,45 @@ async def test_upsert_blocked_on_non_open_period(session_factory, open_period):
 
 
 @pytest.mark.asyncio
-async def test_post_balances_form(client: AsyncClient, session_factory, open_period):
+async def test_post_balances_json(client: AsyncClient, session_factory, open_period):
     response = await client.post(
-        f"/periods/{open_period.period_id}/balances",
-        data={"100101": "999.99", "200101": "", "400101": "5000.00"},
+        f"/api/v1/periods/{open_period.period_id}/balances",
+        json=[
+            {"account_code": 100101, "stated_balance": "999.99"},
+            {"account_code": 400101, "stated_balance": "5000.00"},  # Income — ignored by service
+        ],
     )
     assert response.status_code == 200
+    assert response.json() == {"ok": True}
 
     async with session_factory() as session:
         rows = (await session.scalars(select(StatedBalance))).all()
     by_code = {r.account_code: r.stated_balance for r in rows}
-    assert by_code == {100101: Decimal("999.99")}  # 200101 empty, 400101 ignored (Income)
+    assert by_code == {100101: Decimal("999.99")}  # 400101 ignored (Income)
 
 
 @pytest.mark.asyncio
-async def test_balance_form_renders_existing_values(
-    client: AsyncClient, open_period
+async def test_period_detail_includes_stated_balances(
+    client: AsyncClient, session_factory, open_period
 ):
     await client.post(
-        f"/periods/{open_period.period_id}/balances",
-        data={"100101": "777.77"},
+        f"/api/v1/periods/{open_period.period_id}/balances",
+        json=[{"account_code": 100101, "stated_balance": "777.77"}],
     )
-    response = await client.get(f"/periods/{open_period.period_id}")
+    response = await client.get(f"/api/v1/periods/{open_period.period_id}")
     assert response.status_code == 200
-    assert 'name="100101"' in response.text
-    assert "777.77" in response.text
+    data = response.json()
+    assert "stated_balances" in data
+    assert data["stated_balances"].get("100101") == "777.77"
 
 
 @pytest.mark.asyncio
-async def test_balance_form_invalid_amount_shows_error(
+async def test_balance_invalid_amount_returns_400(
     client: AsyncClient, open_period
 ):
     response = await client.post(
-        f"/periods/{open_period.period_id}/balances",
-        data={"100101": "not-a-number"},
+        f"/api/v1/periods/{open_period.period_id}/balances",
+        json=[{"account_code": 100101, "stated_balance": "not-a-number"}],
     )
-    assert response.status_code == 200
-    assert "Invalid amount" in response.text
+    assert response.status_code == 400
+    assert "Invalid balance" in response.json()["detail"]
