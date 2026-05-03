@@ -86,6 +86,7 @@ export default function StatementsPage() {
   const [periodId, setPeriodId] = useState<string>('')
 
   const periodsQ = useQuery({ queryKey: ['periods'], queryFn: fetchPeriods, staleTime: 30_000 })
+  const closedPeriods = periodsQ.data?.filter((p) => p.status === 'closed') ?? []
   const bsQ = useQuery({ queryKey: ['balance-sheet'], queryFn: fetchBalanceSheet, staleTime: 30_000 })
   const incQ = useQuery({
     queryKey: ['income-statement', periodId],
@@ -125,7 +126,7 @@ export default function StatementsPage() {
                 onChange={(e) => setPeriodId(e.target.value)}
               >
                 {activeTab !== 'cashflows' && <option value="">All periods (aggregate)</option>}
-                {periodsQ.data?.map((p) => (
+                {closedPeriods.map((p) => (
                   <option key={p.period_id} value={p.period_id}>
                     {p.period_start.slice(0, 7)}
                   </option>
@@ -143,8 +144,8 @@ export default function StatementsPage() {
             className={`tab-btn${activeTab === t.id ? ' tab-btn--active' : ''}`}
             onClick={() => {
               setActiveTab(t.id)
-              if (t.id === 'cashflows' && !periodId && periodsQ.data?.[0]) {
-                setPeriodId(periodsQ.data[0].period_id)
+              if (t.id === 'cashflows' && !periodId && closedPeriods[0]) {
+                setPeriodId(closedPeriods[0].period_id)
               }
             }}
           >

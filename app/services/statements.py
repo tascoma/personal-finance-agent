@@ -129,6 +129,11 @@ async def _load_lines(
     return list(result.all())
 
 
+async def _closed_period_ids(db: AsyncSession) -> list[UUID]:
+    result = await db.scalars(select(Period.period_id).where(Period.status == "closed"))
+    return list(result.all())
+
+
 async def list_periods_desc(db: AsyncSession) -> list[Period]:
     result = await db.scalars(select(Period).order_by(Period.period_start.desc()))
     return list(result.all())
@@ -219,8 +224,10 @@ async def compute_income_statement(
     period_ids: Optional[list[UUID]],
     range_label: str,
 ) -> IncomeStatement:
-    """Income and expenses for the given periods (or all-time if None)."""
+    """Income and expenses for the given periods (or all closed periods if None)."""
     accounts = await _load_accounts(db)
+    if period_ids is None:
+        period_ids = await _closed_period_ids(db)
     lines = await _load_lines(db, period_ids, exclude_closing=True)
 
     income, total_income = _group_by_subcategory(lines, accounts, "Income")
@@ -239,7 +246,7 @@ async def compute_income_statement(
 async def compute_balance_sheet_pivot(db: AsyncSession) -> BalanceSheetPivot:
     """Cumulative balance-sheet balances with periods as columns and accounts as rows."""
     accounts = await _load_accounts(db)
-    periods_result = await db.scalars(select(Period).order_by(Period.period_start.asc()))
+    periods_result = await db.scalars(select(Period).where(Period.status == "closed").order_by(Period.period_start.asc()))
     periods = list(periods_result.all())
 
     if not periods:
@@ -370,6 +377,8 @@ async def compute_cashflow(
     asset and liability/equity accounts respectively.
     """
     accounts = await _load_accounts(db)
+    if period_ids is None:
+        period_ids = await _closed_period_ids(db)
     lines = await _load_lines(db, period_ids, exclude_closing=True)
 
     cash_codes = {code for code, a in accounts.items() if _is_cash_account(a)}

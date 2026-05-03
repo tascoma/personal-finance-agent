@@ -14,6 +14,7 @@ from app.dependencies import get_classifier_agent, get_db_session
 from app.main import app
 from app.models.account import Account
 from app.models.document import Document
+from app.models.period import Period
 from app.models.raw_transaction import RawTransaction
 from app.services import journal as journal_service
 from app.services import period as period_service
@@ -49,7 +50,7 @@ async def session_factory():
 
 
 async def _seed_period_with_entries(session_factory, year: int, month: int):
-    """Create an open period and post a paystub-like + grocery entry."""
+    """Create a closed period and post a paystub-like + grocery entry."""
     async with session_factory() as session:
         period = await period_service.create_period(session, year, month)
 
@@ -90,7 +91,13 @@ async def _seed_period_with_entries(session_factory, year: int, month: int):
 
     async with session_factory() as session:
         await journal_service.post_period(session, period.period_id)
-    return period
+
+    async with session_factory() as session:
+        p = await session.get(period_service.Period, period.period_id)
+        p.status = "closed"
+        await session.commit()
+        await session.refresh(p)
+    return p
 
 
 # ── service-level tests ─────────────────────────────────────────────────────
