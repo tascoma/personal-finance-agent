@@ -10,6 +10,7 @@ import {
 } from '../api/journal'
 import { approveTransaction, unapproveTransaction, rejectTransaction, approveAllStaged, unapproveAll, rejectAllStaged, updateTransactionAccount } from '../api/transactions'
 import { setDocumentSourceAccount } from '../api/documents'
+import { updatePeriodStatus, stepBackPeriod } from '../api/periods'
 import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
@@ -18,7 +19,7 @@ import Banner from '../components/Banner'
 import EmptyState from '../components/EmptyState'
 import ConfidencePill from '../components/ConfidencePill'
 import SvgIcon from '../components/SvgIcon'
-import { fmtPeriod } from '../utils/format'
+import { fmtPeriod, fmtStatus } from '../utils/format'
 import type { JournalLineCreate } from '../types'
 
 type Tab = 'staged' | 'approved' | 'posted'
@@ -113,6 +114,18 @@ export default function JournalPage() {
     onError: (e: Error) => setError(e.message),
   })
 
+  const advanceStatus = useMutation({
+    mutationFn: (s: string) => updatePeriodStatus(periodId!, s),
+    onSuccess: invalidate,
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const stepBack = useMutation({
+    mutationFn: () => stepBackPeriod(periodId!),
+    onSuccess: invalidate,
+    onError: (e: Error) => setError(e.message),
+  })
+
   const setDocSource = useMutation({
     mutationFn: ({ docId, code }: { docId: string; code: number }) =>
       setDocumentSourceAccount(periodId!, docId, code),
@@ -139,9 +152,9 @@ export default function JournalPage() {
 
   if (isLoading || !data) return <Layout><p style={{ color: 'var(--text-3)' }}>Loading…</p></Layout>
 
-  const { period, accounts, staged, approved, entries, has_unclassified, docs_missing_source } = data
+  const { period, accounts, staged, approved, entries, has_unclassified, docs_missing_source, next_status, prev_status } = data
   const accountsByCode = Object.fromEntries(accounts.map((a) => [a.account_code, a]))
-  const canEdit = period.status === 'pending_close'
+  const canEdit = period.status === 'open' || period.status === 'pending_close'
 
   const balanceIndicator = () => {
     const dr = lines.reduce((s, l) => s + (parseFloat(l.debit) || 0), 0)
@@ -171,6 +184,16 @@ export default function JournalPage() {
             {canEdit && approved.length > 0 && (
               <button className="btn btn-primary btn-sm" disabled={post.isPending} onClick={() => post.mutate()}>
                 {post.isPending ? 'Posting…' : 'Post All Approved →'}
+              </button>
+            )}
+            {prev_status && (
+              <button className="btn btn-ghost btn-sm" disabled={stepBack.isPending} onClick={() => stepBack.mutate()}>
+                ← {fmtStatus(prev_status)}
+              </button>
+            )}
+            {next_status && (
+              <button className="btn btn-secondary btn-sm" disabled={advanceStatus.isPending} onClick={() => advanceStatus.mutate(next_status)}>
+                {fmtStatus(next_status)} →
               </button>
             )}
           </div>

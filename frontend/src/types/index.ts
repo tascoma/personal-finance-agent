@@ -247,6 +247,8 @@ export interface CashflowStatementResponse {
   financing_total: string
   net_change_in_cash: string
   cash_by_account: StatementLine[]
+  beginning_cash: string
+  ending_cash: string
 }
 
 // ── Journal page ───────────────────────────────────────────────────
@@ -259,6 +261,8 @@ export interface JournalPageResponse {
   entries: JournalEntryWithLines[]
   has_unclassified: boolean
   docs_missing_source: Document[]
+  next_status: string | null
+  prev_status: string | null
 }
 
 // ── Reconciliation ─────────────────────────────────────────────────

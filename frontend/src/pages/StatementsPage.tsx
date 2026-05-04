@@ -359,11 +359,27 @@ export default function StatementsPage() {
                 </table>
 
                 <table className="data-table" style={{ marginTop: 18 }}>
-                  <tfoot>
+                  <tbody>
                     <tr>
                       <td className="fw-600">Net change in cash</td>
                       <td className="mono text-right fw-600" style={{ width: 160, borderTop: '2px solid var(--border-md)' }}>
                         <Money val={cf.net_change_in_cash} />
+                      </td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td className="color-text2" style={{ paddingTop: 14 }}>Beginning cash balance</td>
+                      <td className="mono text-right" style={{ paddingTop: 14, width: 160 }}><Money val={cf.beginning_cash} /></td>
+                    </tr>
+                    <tr>
+                      <td className="color-text2">+ Net change in cash</td>
+                      <td className="mono text-right"><Money val={cf.net_change_in_cash} /></td>
+                    </tr>
+                    <tr>
+                      <td className="fw-600" style={{ paddingTop: 6 }}>Ending cash balance</td>
+                      <td className="mono text-right fw-600" style={{ borderTop: '2px solid var(--border-md)', paddingTop: 6 }}>
+                        <Money val={cf.ending_cash} />
                       </td>
                     </tr>
                   </tfoot>

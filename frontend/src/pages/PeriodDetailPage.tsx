@@ -235,11 +235,18 @@ export default function PeriodDetailPage() {
               <div className="card-hd-right">
                 {canEdit && has_pending_documents && (
                   <button className="btn btn-secondary btn-sm" disabled={parseAll.isPending} onClick={() => parseAll.mutate()}>
+                    {parseAll.isPending && <span className="spinner" style={{ marginRight: 6 }} />}
                     {parseAll.isPending ? 'Parsing…' : 'Parse all pending'}
                   </button>
                 )}
               </div>
             </div>
+            {(parseDoc.isPending || parseAll.isPending) && (
+              <div className="progress-bar">
+                <div className="progress-bar-track" />
+                <div className="progress-bar-fill" />
+              </div>
+            )}
             {documents.length === 0 ? (
               <EmptyState icon="file" message="No documents uploaded yet." hint={canEdit ? 'Upload PDFs, CSVs, or XLSX files using the form above.' : 'This period is no longer open for uploads.'} />
             ) : (
@@ -284,10 +291,16 @@ export default function PeriodDetailPage() {
                       <td>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                           {canEdit && doc.document_type !== 'manual' && (doc.parse_status === 'pending' || doc.parse_status === 'failed') && (
-                            <button className="btn btn-primary btn-sm" disabled={parseDoc.isPending} onClick={() => parseDoc.mutate(doc.document_id)}>Parse</button>
+                            <button className="btn btn-primary btn-sm" disabled={parseDoc.isPending || parseAll.isPending} onClick={() => parseDoc.mutate(doc.document_id)} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              {parseDoc.isPending && parseDoc.variables === doc.document_id && <span className="spinner" />}
+                              Parse
+                            </button>
                           )}
                           {canEdit && doc.document_type !== 'manual' && doc.parse_status === 'complete' && (
-                            <button className="btn btn-secondary btn-sm" disabled={parseDoc.isPending} onClick={() => { if (window.confirm('Reparse? Existing transactions from this document will be replaced.')) parseDoc.mutate(doc.document_id) }}>Reparse</button>
+                            <button className="btn btn-secondary btn-sm" disabled={parseDoc.isPending || parseAll.isPending} onClick={() => { if (window.confirm('Reparse? Existing transactions from this document will be replaced.')) parseDoc.mutate(doc.document_id) }} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              {parseDoc.isPending && parseDoc.variables === doc.document_id && <span className="spinner" />}
+                              Reparse
+                            </button>
                           )}
                           {period?.status === 'pending_close' && posted_doc_ids.includes(doc.document_id) && (
                             <button className="btn btn-secondary btn-sm" disabled={unpost.isPending} onClick={() => { if (window.confirm('Unpost all transactions from this document?')) unpost.mutate(doc.document_id) }}>Unpost</button>
