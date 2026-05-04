@@ -2,11 +2,11 @@ import { Link } from 'react-router-dom'
 import type { Period } from '../types'
 import SvgIcon from './SvgIcon'
 
-const STEPS: Array<{ status: Period['status']; label: string; sub: string }> = [
-  { status: 'open', label: 'Input', sub: 'Upload docs' },
-  { status: 'pending_review', label: 'Parse', sub: 'Classify txns' },
-  { status: 'pending_close', label: 'Journal', sub: 'Post entries' },
-  { status: 'closed', label: 'Close', sub: 'Reconcile' },
+const STEPS: Array<{ status: Period['status']; label: string; sub: string; path: string }> = [
+  { status: 'open', label: 'Input', sub: 'Upload docs', path: '' },
+  { status: 'pending_review', label: 'Parse', sub: 'Classify txns', path: '/journal' },
+  { status: 'pending_close', label: 'Journal', sub: 'Post entries', path: '/journal' },
+  { status: 'closed', label: 'Close', sub: 'Reconcile', path: '/reconcile' },
 ]
 
 const STATUS_ORDER: Record<Period['status'], number> = {
@@ -30,7 +30,7 @@ export default function PeriodStepper({ period }: Props) {
         return (
           <Link
             key={step.status}
-            to={`/periods/${period.period_id}`}
+            to={`/periods/${period.period_id}${step.path}`}
             className={`step step--${state}`}
             style={{ textDecoration: 'none' }}
           >

@@ -13,12 +13,12 @@ wheels/
 
 # Logs
 *.log
-logs/*
-!logs/.gitkeep
+backend/logs/*
+!backend/logs/.gitkeep
 
 # Uploads
-uploads/*
-!uploads/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
 
 # Database files
 *.db

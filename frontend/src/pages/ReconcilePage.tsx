@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -34,6 +35,7 @@ function fmtSigned(val: string) {
 export default function ReconcilePage() {
   const { periodId } = useParams<{ periodId: string }>()
   const qc = useQueryClient()
+  const [error, setError] = useState<string | null>(null)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['reconcile', periodId] })
 
@@ -47,37 +49,44 @@ export default function ReconcilePage() {
   const run = useMutation({
     mutationFn: () => runReconciliation(periodId!),
     onSuccess: (d) => qc.setQueryData(['reconcile', periodId], d),
+    onError: (e: Error) => setError(e.message),
   })
 
   const analyze = useMutation({
     mutationFn: () => analyzeReconciliation(periodId!),
     onSuccess: (d) => qc.setQueryData(['reconcile', periodId], d),
+    onError: (e: Error) => setError(e.message),
   })
 
   const postUnrealized = useMutation({
     mutationFn: (code: number) => postUnrealizedGl(periodId!, code),
     onSuccess: (d) => qc.setQueryData(['reconcile', periodId], d),
+    onError: (e: Error) => setError(e.message),
   })
 
   const postClosing = useMutation({
     mutationFn: () => postClosingEntries(periodId!),
     onSuccess: (d) => qc.setQueryData(['reconcile', periodId], d),
+    onError: (e: Error) => setError(e.message),
   })
 
   const postEquity = useMutation({
     mutationFn: () => postEquityRollup(periodId!),
     onSuccess: (d) => qc.setQueryData(['reconcile', periodId], d),
+    onError: (e: Error) => setError(e.message),
   })
 
   const advanceStatus = useMutation({
     mutationFn: (s: string) => updatePeriodStatus(periodId!, s),
     onSuccess: () => invalidate(),
+    onError: (e: Error) => setError(e.message),
   })
 
   if (isLoading || !data) return <Layout><p style={{ color: 'var(--text-3)' }}>Loading…</p></Layout>
 
   const { period, details, ran, has_gaps, has_non_investment_gaps, analysis, temp_preview, equity_preview } = data
-  const canEdit = period.status === 'pending_close'
+  const canEdit = period.status === 'pending_close' || period.status === 'closed'
+  const canClose = period.status === 'pending_close'
 
   return (
     <Layout activePeriod={period}>
@@ -97,6 +106,7 @@ export default function ReconcilePage() {
       <PeriodStepper period={period} />
 
       {loadError && <Banner variant="red" style={{ marginTop: 16 }}>Failed to load reconciliation data.</Banner>}
+      {error && <Banner variant="red" style={{ marginTop: 16 }}>{error}</Banner>}
 
       {!ran ? (
         <div className="card mt-16">
@@ -109,7 +119,7 @@ export default function ReconcilePage() {
                 {run.isPending ? 'Running…' : 'Run Reconciliation'}
               </button>
             ) : (
-              <p className="color-text3" style={{ fontSize: 12 }}>Reconciliation is only available in Pending Close status.</p>
+              <p className="color-text3" style={{ fontSize: 12 }}>Advance the period to Pending Close or Closed to run reconciliation.</p>
             )}
           </div>
         </div>
@@ -359,7 +369,7 @@ export default function ReconcilePage() {
       )}
 
       {/* Close Period */}
-      {canEdit && (
+      {canClose && (
         <div className="card mt-16">
           <div className="card-hd">
             <div>

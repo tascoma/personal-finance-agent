@@ -27,4 +27,5 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-pythonpath = ["."]
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]

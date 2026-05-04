@@ -319,6 +319,45 @@ html.nav-collapsed .sidebar-collapse-icon { transform: rotate(0deg); }
 .badge--debit         { background: var(--accent-glow); color: var(--accent); }
 .badge--credit        { background: var(--green-bg); color: var(--green); }
 
+/* ── Progress / Spinner ── */
+.progress-bar {
+  height: 3px;
+  background: transparent;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar-track {
+  position: absolute; inset: 0;
+  background: var(--accent-border);
+}
+
+.progress-bar-fill {
+  position: absolute; top: 0; bottom: 0;
+  width: 40%;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: bar-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes bar-slide {
+  0%   { left: -50%; }
+  100% { left: 110%; }
+}
+
+.spinner {
+  display: inline-block;
+  width: 11px; height: 11px;
+  border: 1.5px solid var(--accent-border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ── Card ── */
 .card {
   background: var(--bg-card);
