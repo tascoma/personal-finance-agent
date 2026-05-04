@@ -4,12 +4,16 @@ A personal double-entry accounting system with an AI-powered document and transa
 
 ## Stack
 
+### Backend
 - **FastAPI** — async web framework with dependency injection
 - **Pydantic AI** — structured LLM agent framework (Claude Sonnet 4.6)
 - **Pydantic v2** — request/response schemas and settings via `BaseSettings`
 - **SQLAlchemy 2.0** — async ORM (SQLite by default, PostgreSQL-compatible)
-- **Jinja2** — server-side HTML templating
 - **uv** — dependency and virtual environment management
+
+### Frontend
+- **React 18** + **TypeScript** — component-based SPA
+- **Vite** — dev server and build tool
 
 ## Features
 
@@ -27,6 +31,8 @@ A personal double-entry accounting system with an AI-powered document and transa
 
 ### 1. Install dependencies
 
+From the project root:
+
 ```bash
 uv venv
 uv sync
@@ -38,28 +44,49 @@ uv sync
 cp .env.example .env
 ```
 
-Fill in `.env`:
+Fill in `.env` (lives at the project root):
 
 ```env
 APP_ENV=development
 SECRET_KEY=changeme
 DATABASE_URL=sqlite+aiosqlite:///./app.db
 ANTHROPIC_API_KEY=your-api-key-here
+ALLOWED_ORIGINS=http://localhost:5173
 ```
 
-### 3. Run the dev server
+### 3. Run the backend
 
 ```bash
-python3 -m app.main
+cd backend
+uv run python -m app.main
 ```
 
 Or directly with uvicorn:
 
 ```bash
+cd backend
 uv run uvicorn app.main:app --reload
 ```
 
-The app starts at `http://127.0.0.1:8000`.
+The API starts at `http://127.0.0.1:8000`.
+
+### 4. Run the frontend dev server
+
+```bash
+cd frontend
+npm install   # first time only
+npm run dev
+```
+
+The UI is served at `http://localhost:5173` and proxies API requests to the backend.
+
+### 5. Run tests
+
+From the project root:
+
+```bash
+uv run pytest
+```
 
 ## Monthly close workflow
 
@@ -103,23 +130,36 @@ Post closing entries to zero out income and expense accounts and roll net income
 
 ```
 personal-finance-agent/
-├── app/
-│   ├── main.py              # FastAPI app instance, router includes, lifespan
-│   ├── core/
-│   │   ├── config.py        # Pydantic BaseSettings (env-driven)
-│   │   └── logging.py       # Logging configuration
-│   ├── databases/           # SQLAlchemy engine and session factory
-│   ├── dependencies/        # Shared Depends() factories
-│   ├── routes/              # APIRouter modules (dashboard, accounts, ledger, periods)
-│   ├── models/              # SQLAlchemy ORM models
-│   ├── schemas/             # Pydantic request/response schemas
-│   ├── agents/              # Pydantic AI agent definitions (classifier, statement, paystub, mortgage, reconciliation)
-│   ├── services/            # Business logic layer
-│   ├── templates/           # Jinja2 HTML templates
-│   └── static/              # CSS, JS, images
-├── tests/
-├── logs/
-└── uploads/
+├── backend/
+│   ├── app/
+│   │   ├── main.py              # FastAPI app instance, router includes, lifespan
+│   │   ├── core/
+│   │   │   ├── config.py        # Pydantic BaseSettings (env-driven)
+│   │   │   └── logging.py       # Logging configuration
+│   │   ├── databases/           # SQLAlchemy engine and session factory
+│   │   ├── dependencies/        # Shared Depends() factories
+│   │   ├── routes/              # APIRouter modules (dashboard, accounts, ledger, periods…)
+│   │   ├── models/              # SQLAlchemy ORM models
+│   │   ├── schemas/             # Pydantic request/response schemas
+│   │   ├── agents/              # Pydantic AI agents (classifier, statement, paystub, mortgage, reconciliation)
+│   │   └── services/            # Business logic layer
+│   ├── tests/                   # pytest suite
+│   ├── logs/                    # Runtime logs (gitignored)
+│   ├── uploads/                 # Uploaded documents (gitignored)
+│   └── app.db                   # SQLite database (gitignored)
+├── frontend/
+│   ├── src/
+│   │   ├── api/                 # Typed API client
+│   │   ├── components/          # Shared React components
+│   │   ├── pages/               # Page-level components
+│   │   ├── types/               # TypeScript types
+│   │   └── utils/
+│   ├── index.html
+│   └── vite.config.ts
+├── .env                         # Local secrets (gitignored)
+├── .env.example                 # Documents required env vars
+├── pyproject.toml
+└── uv.lock
 ```
 
 ## Domain concepts
