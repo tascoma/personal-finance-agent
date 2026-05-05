@@ -138,7 +138,7 @@ export default function PeriodDetailPage() {
 
   const del = useMutation({
     mutationFn: () => deletePeriod(periodId!),
-    onSuccess: () => navigate('/periods'),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['periods'] }); navigate('/periods') },
     onError: (e: Error) => setError(e.message),
   })
 

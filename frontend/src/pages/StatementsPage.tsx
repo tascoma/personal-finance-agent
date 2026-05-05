@@ -11,8 +11,9 @@ type Tab = 'balance_sheet' | 'income_statement' | 'cashflows'
 
 function Money({ val }: { val: string }) {
   const n = parseFloat(val)
-  if (n < 0) return <span style={{ color: 'var(--red)' }}>${Math.abs(n).toFixed(2)}</span>
-  return <span>${n.toFixed(2)}</span>
+  const fmt = (v: number) => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  if (n < 0) return <span style={{ color: 'var(--red)' }}>${fmt(Math.abs(n))}</span>
+  return <span>${fmt(n)}</span>
 }
 
 function SectionTable({ sections, totalLabel, totalAmount }: {
