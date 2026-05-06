@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db_session
+from app.dependencies import get_current_user, get_db_session
 from app.models.account import Account
 from app.models.journal import JournalEntry, JournalLine
 from app.models.period import Period
@@ -16,7 +16,7 @@ from app.schemas.period import PeriodRead
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["ledger"])
+router = APIRouter(tags=["ledger"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/ledger", response_model=LedgerResponse)

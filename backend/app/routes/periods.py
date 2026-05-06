@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db_session
+from app.dependencies import get_current_user, get_db_session
 from app.models.account import Account
 from app.models.raw_transaction import RawTransaction
 from app.schemas.account import AccountRead
@@ -26,7 +26,7 @@ from app.services import stated_balance as stated_balance_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["periods"])
+router = APIRouter(tags=["periods"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/periods", response_model=list[PeriodRead])

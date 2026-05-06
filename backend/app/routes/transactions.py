@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db_session
+from app.dependencies import get_current_user, get_db_session
 from app.models.account import Account
 from app.models.raw_transaction import RawTransaction
 from app.models.review_queue import ReviewQueue
@@ -18,7 +18,7 @@ from app.services import period as period_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["transactions"])
+router = APIRouter(tags=["transactions"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/periods/{period_id}/transactions", response_model=list[RawTransactionRead])

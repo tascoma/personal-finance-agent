@@ -1,0 +1,156 @@
+"""Tests for auth endpoints and protected route enforcement."""
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from app.databases import Base
+from app.dependencies import get_db_session
+from app.main import app
+
+TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
+
+REGISTER_PAYLOAD = {"email": "test@example.com", "password": "securepassword"}
+LOGIN_PAYLOAD = REGISTER_PAYLOAD
+
+
+@pytest_asyncio.fixture
+async def session_factory():
+    eng = create_async_engine(TEST_DB_URL, echo=False)
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(eng, expire_on_commit=False)
+    yield factory
+    await eng.dispose()
+
+
+@pytest_asyncio.fixture
+async def client(session_factory):
+    async def override_get_db_session():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db_session] = override_get_db_session
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def auth_client(client: AsyncClient):
+    """Client with a valid Bearer token pre-loaded."""
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    resp = await client.post("/api/v1/auth/login", json=LOGIN_PAYLOAD)
+    token = resp.json()["access_token"]
+    client.headers.update({"Authorization": f"Bearer {token}"})
+    return client
+
+
+# ── Register ──────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_register_creates_user(client: AsyncClient):
+    resp = await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["email"] == REGISTER_PAYLOAD["email"]
+    assert "user_id" in data
+    assert "hashed_password" not in data
+
+
+@pytest.mark.asyncio
+async def test_register_duplicate_email_returns_409(client: AsyncClient):
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    resp = await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_register_short_password_returns_422(client: AsyncClient):
+    resp = await client.post(
+        "/api/v1/auth/register", json={"email": "a@b.com", "password": "short"}
+    )
+    assert resp.status_code == 422
+
+
+# ── Login ─────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_login_returns_access_token(client: AsyncClient):
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    resp = await client.post("/api/v1/auth/login", json=LOGIN_PAYLOAD)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "access_token" in body
+    assert body["token_type"] == "bearer"
+
+
+@pytest.mark.asyncio
+async def test_login_sets_refresh_cookie(client: AsyncClient):
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    resp = await client.post("/api/v1/auth/login", json=LOGIN_PAYLOAD)
+    assert "refresh_token" in resp.cookies
+
+
+@pytest.mark.asyncio
+async def test_login_bad_password_returns_401(client: AsyncClient):
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    resp = await client.post(
+        "/api/v1/auth/login", json={**LOGIN_PAYLOAD, "password": "wrongpass"}
+    )
+    assert resp.status_code == 401
+
+
+# ── Refresh ───────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_refresh_issues_new_access_token(client: AsyncClient):
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    await client.post("/api/v1/auth/login", json=LOGIN_PAYLOAD)
+    resp = await client.post("/api/v1/auth/refresh")
+    assert resp.status_code == 200
+    assert "access_token" in resp.json()
+
+
+@pytest.mark.asyncio
+async def test_refresh_without_cookie_returns_401(client: AsyncClient):
+    resp = await client.post("/api/v1/auth/refresh")
+    assert resp.status_code == 401
+
+
+# ── Protected routes ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_protected_route_without_token_returns_4xx(client: AsyncClient):
+    resp = await client.get("/api/v1/accounts")
+    assert resp.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_protected_route_with_token_succeeds(auth_client: AsyncClient):
+    resp = await auth_client.get("/api/v1/accounts")
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_me_returns_user_info(auth_client: AsyncClient):
+    resp = await auth_client.get("/api/v1/auth/me")
+    assert resp.status_code == 200
+    assert resp.json()["email"] == REGISTER_PAYLOAD["email"]
+
+
+# ── Logout ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_logout_clears_cookie(client: AsyncClient):
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    await client.post("/api/v1/auth/login", json=LOGIN_PAYLOAD)
+    resp = await client.post("/api/v1/auth/logout")
+    assert resp.status_code == 204

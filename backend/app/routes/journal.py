@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db_session
+from app.dependencies import get_current_user, get_db_session
 from app.models.account import Account
 from app.models.document import Document
 from app.models.journal import JournalEntry, JournalLine
@@ -31,7 +31,7 @@ from app.services import period as period_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["journal"])
+router = APIRouter(tags=["journal"], dependencies=[Depends(get_current_user)])
 
 
 def _build_entry_with_lines(

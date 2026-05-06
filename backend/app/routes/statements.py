@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db_session
+from app.dependencies import get_current_user, get_db_session
 from app.schemas.api_responses import (
     BalanceSheetPivotResponse,
     BalanceSheetPivotSectionSchema,
@@ -20,7 +20,7 @@ from app.services import statements as stmt_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["statements"])
+router = APIRouter(tags=["statements"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/statements/balance-sheet", response_model=BalanceSheetPivotResponse)

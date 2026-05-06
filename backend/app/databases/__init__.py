@@ -131,7 +131,7 @@ async def init_db() -> None:
     from app.models import (  # noqa: F401 — import triggers Base registration
         Account, Period, Document, RawTransaction,
         JournalEntry, JournalLine, StatedBalance,
-        Reconciliation, ReviewQueue,
+        Reconciliation, ReviewQueue, User,
     )
 
     async with engine.begin() as conn:
