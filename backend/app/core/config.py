@@ -7,6 +7,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     app_env: str = "development"
     secret_key: str = "changeme"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60
+    refresh_token_expire_days: int = 30
     database_url: str = "postgresql+asyncpg://user:pass@localhost:5432/finance"
     anthropic_api_key: str = ""
     host: str = "127.0.0.1"

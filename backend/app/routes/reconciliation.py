@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.reconciliation import ReconciliationAnalysis, run_reconciliation_agent
-from app.dependencies import get_db_session
+from app.dependencies import get_current_user, get_db_session
 from app.models.reconciliation import Reconciliation
 from app.schemas.api_responses import (
     AccountAnalysisSchema,
@@ -21,7 +21,7 @@ from app.services import reconciliation as recon_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["reconciliation"])
+router = APIRouter(tags=["reconciliation"], dependencies=[Depends(get_current_user)])
 
 
 async def _build_page(

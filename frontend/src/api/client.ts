@@ -1,5 +1,16 @@
 const BASE = '/api/v1'
 
+let _getToken: () => string | null = () => null
+let _onUnauthorized: () => void = () => {}
+
+export function configureClient(
+  getToken: () => string | null,
+  onUnauthorized: () => void,
+): void {
+  _getToken = getToken
+  _onUnauthorized = onUnauthorized
+}
+
 class ApiError extends Error {
   constructor(
     public status: number,
@@ -14,13 +25,27 @@ async function request<T>(
   options: RequestInit = {},
 ): Promise<T> {
   const isFormData = options.body instanceof FormData
+  const token = _getToken()
+  const authHeaders: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {}
 
   const res = await fetch(`${BASE}${path}`, {
     ...options,
+    credentials: 'include',
     headers: isFormData
-      ? (options.headers ?? {})
-      : { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
+      ? { ...authHeaders, ...(options.headers as Record<string, string> ?? {}) }
+      : {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+          ...(options.headers as Record<string, string> ?? {}),
+        },
   })
+
+  if (res.status === 401) {
+    _onUnauthorized()
+    throw new ApiError(401, 'Unauthorized')
+  }
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`

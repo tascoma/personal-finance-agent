@@ -29,6 +29,8 @@ Practice project for building a full-stack web app with a FastAPI backend and Re
 - **SQLAlchemy 2.0** — async ORM for persistence (engine/session wired in `app/databases/`)
 - **asyncpg** — async PostgreSQL driver (Supabase)
 - **Alembic** — database schema migration management (`backend/alembic/`)
+- **python-jose** — JWT encoding/decoding for access and refresh tokens
+- **bcrypt** — password hashing
 - **Python stdlib `logging`** — configured in `app/core/logging.py`
 - **uv** — package/dependency manager and virtual environment tool (replaces pip + venv)
 
@@ -54,10 +56,10 @@ personal-finance-agent/
 │   │   │   ├── config.py        # Pydantic BaseSettings (env-driven); db_connect_args property
 │   │   │   └── logging.py       # configure_logging() called on startup
 │   │   ├── databases/           # SQLAlchemy engine + session factory
-│   │   ├── dependencies/        # Shared Depends() factories (db session, agents)
+│   │   ├── dependencies/        # Shared Depends() factories (db session, agents, get_current_user)
 │   │   ├── routes/              # APIRouter modules (one per resource/feature)
-│   │   ├── models/              # SQLAlchemy ORM models
-│   │   ├── schemas/             # Pydantic request/response schemas
+│   │   ├── models/              # SQLAlchemy ORM models (including User)
+│   │   ├── schemas/             # Pydantic request/response schemas (including auth schemas)
 │   │   ├── agents/              # Pydantic-AI agent definitions and tools
 │   │   └── services/            # Business logic between routes and models/agents
 │   ├── tests/                   # pytest suite (uses SQLite in-memory)
@@ -109,3 +111,4 @@ Backend: `http://127.0.0.1:8000` · Frontend dev server: `http://localhost:5173`
 - `import app.*` (not `backend.app.*`) — the package root is `backend/`, added to `sys.path` by `pyproject.toml` for tests and by the CWD when running from `backend/`.
 - **Schema migrations via Alembic.** Run `alembic upgrade head` from `backend/` before starting the app against a new database. Generate new migrations with `alembic revision --autogenerate -m "description"` after changing models.
 - **Tests use SQLite in-memory.** The pytest suite sets `DATABASE_URL=sqlite+aiosqlite:///:memory:` per-fixture and does not require a live PostgreSQL connection.
+- **Authentication.** JWT-based auth with short-lived access tokens (Bearer) and long-lived refresh tokens (HttpOnly cookie, scoped to `/api/v1/auth`). Use the `get_current_user` dependency from `app.dependencies` to protect any route. The `services/auth.py` layer handles hashing, JWT creation/decoding, and DB lookups; the route layer only maps `AuthError` → HTTP status codes. The `SECRET_KEY` env var must be set to a non-default value in production.

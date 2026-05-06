@@ -4,13 +4,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db_session
+from app.dependencies import get_current_user, get_db_session
 from app.models.account import Account
 from app.schemas.account import AccountRead
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["accounts"])
+router = APIRouter(tags=["accounts"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/accounts", response_model=list[AccountRead])

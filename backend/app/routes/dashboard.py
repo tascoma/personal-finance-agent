@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db_session
+from app.dependencies import get_current_user, get_db_session
 from app.schemas.api_responses import (
     DashboardResponse,
     ExpenseCategoryPoint,
@@ -19,7 +19,7 @@ from app.services.period import get_current_open_period
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["dashboard"])
+router = APIRouter(tags=["dashboard"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/dashboard", response_model=DashboardResponse)

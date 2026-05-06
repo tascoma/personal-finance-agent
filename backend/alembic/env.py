@@ -19,6 +19,7 @@ from app.models import (  # noqa: F401 — registers all tables on Base.metadata
     Reconciliation,
     ReviewQueue,
     StatedBalance,
+    User,
 )
 
 config = context.config

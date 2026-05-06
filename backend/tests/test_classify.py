@@ -13,7 +13,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agents.classifier import ClassifierOutput, TxnSuggestion
 from app.databases import Base
-from app.dependencies import get_db_session
+from app.dependencies import get_current_user, get_db_session
+from app.models.user import User
 from app.main import app
 from app.models.account import Account
 from app.models.document import Document
@@ -241,7 +242,12 @@ async def client(session_factory, monkeypatch):
         "app.services.classify.run_classifier",
         AsyncMock(return_value=ClassifierOutput(suggestions=[])),
     )
+    async def _mock_user() -> User:
+        import uuid
+        return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
+
     app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_current_user] = _mock_user
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test", follow_redirects=True) as c:
         yield c

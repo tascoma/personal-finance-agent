@@ -10,7 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.databases import Base
-from app.dependencies import get_db_session
+from app.dependencies import get_current_user, get_db_session
+from app.models.user import User
 from app.main import app
 from app.models.document import Document
 from app.services import document as document_service
@@ -35,7 +36,12 @@ async def client(session_factory):
         async with session_factory() as session:
             yield session
 
+    async def _mock_user() -> User:
+        import uuid
+        return User(user_id=uuid.uuid4(), email="test@test.com", hashed_password="", is_active=True)
+
     app.dependency_overrides[get_db_session] = override_get_db_session
+    app.dependency_overrides[get_current_user] = _mock_user
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

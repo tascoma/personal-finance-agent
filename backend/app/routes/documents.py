@@ -4,7 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db_session
+from app.dependencies import get_current_user, get_db_session
 from app.models.document import Document
 from app.schemas.api_responses import CountResult, OperationResult, SourceAccountRequest
 from app.schemas.document import DocumentRead
@@ -15,7 +15,7 @@ from app.services import parse as parse_service
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["documents"])
+router = APIRouter(tags=["documents"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/periods/{period_id}/documents", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
