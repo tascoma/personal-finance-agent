@@ -10,6 +10,8 @@ A personal double-entry accounting system with an AI-powered document and transa
 - **Pydantic v2** — request/response schemas and settings via `BaseSettings`
 - **SQLAlchemy 2.0** — async ORM with asyncpg driver (PostgreSQL / Supabase)
 - **Alembic** — database schema migration management
+- **python-jose** — JWT access and refresh token generation/validation
+- **bcrypt** — password hashing
 - **uv** — dependency and virtual environment management
 
 ### Frontend
@@ -18,6 +20,7 @@ A personal double-entry accounting system with an AI-powered document and transa
 
 ## Features
 
+- **Authentication** — JWT-based user registration, login, token refresh, and logout; access tokens via Bearer header, refresh tokens via HttpOnly cookie
 - Upload and AI-parse bank/credit card statements, paystubs, and mortgage statements (PDF, CSV, XLSX)
 - AI transaction classifier assigns account codes with confidence scores
 - Double-entry journal with debit/credit constraints enforced at the DB level
@@ -49,10 +52,12 @@ Fill in `.env` (lives at the project root). Get the `DATABASE_URL` from **Supaba
 
 ```env
 APP_ENV=development
-SECRET_KEY=changeme
+SECRET_KEY=changeme                  # must be a strong random value in production
 DATABASE_URL=postgresql+asyncpg://postgres.YOUR_PROJECT_REF:YOUR_PASSWORD@aws-0-REGION.pooler.supabase.com:6543/postgres
 ANTHROPIC_API_KEY=your-api-key-here
 ALLOWED_ORIGINS=http://localhost:5173
+ACCESS_TOKEN_EXPIRE_MINUTES=60       # optional, default 60
+REFRESH_TOKEN_EXPIRE_DAYS=30         # optional, default 30
 ```
 
 ### 3. Apply database migrations
@@ -97,6 +102,20 @@ Tests use an in-memory SQLite database and do not require a live PostgreSQL conn
 ```bash
 uv run pytest
 ```
+
+## Authentication
+
+The API uses JWT-based authentication. All routes except `/api/v1/auth/register` and `/api/v1/auth/login` require a valid Bearer token.
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/v1/auth/register` | POST | Create a new user account |
+| `/api/v1/auth/login` | POST | Authenticate and receive an access token; sets an HttpOnly refresh-token cookie |
+| `/api/v1/auth/refresh` | POST | Exchange the refresh-token cookie for a new access token |
+| `/api/v1/auth/logout` | POST | Clear the refresh-token cookie |
+| `/api/v1/auth/me` | GET | Return the currently authenticated user |
+
+Access tokens expire after 60 minutes (configurable via `ACCESS_TOKEN_EXPIRE_MINUTES`). The refresh token is stored as an HttpOnly cookie scoped to `/api/v1/auth` and expires after 30 days (configurable via `REFRESH_TOKEN_EXPIRE_DAYS`). In production, ensure `SECRET_KEY` is set to a strong random value — the app will refuse to start otherwise.
 
 ## Monthly close workflow
 
@@ -150,12 +169,12 @@ personal-finance-agent/
 │   │   │   ├── config.py        # Pydantic BaseSettings (env-driven)
 │   │   │   └── logging.py       # Logging configuration
 │   │   ├── databases/           # SQLAlchemy engine and session factory
-│   │   ├── dependencies/        # Shared Depends() factories
-│   │   ├── routes/              # APIRouter modules (dashboard, accounts, ledger, periods…)
-│   │   ├── models/              # SQLAlchemy ORM models
-│   │   ├── schemas/             # Pydantic request/response schemas
+│   │   ├── dependencies/        # Shared Depends() factories (get_current_user, get_db_session)
+│   │   ├── routes/              # APIRouter modules (auth, dashboard, accounts, ledger, periods…)
+│   │   ├── models/              # SQLAlchemy ORM models (User, …)
+│   │   ├── schemas/             # Pydantic request/response schemas (auth, …)
 │   │   ├── agents/              # Pydantic AI agents (classifier, statement, paystub, mortgage, reconciliation)
-│   │   └── services/            # Business logic layer
+│   │   └── services/            # Business logic layer (auth, …)
 │   ├── tests/                   # pytest suite (SQLite in-memory)
 │   ├── logs/                    # Runtime logs (gitignored)
 │   └── uploads/                 # Uploaded documents (gitignored)
