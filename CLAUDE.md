@@ -27,6 +27,8 @@ Practice project for building a full-stack web app with a FastAPI backend and Re
 - **Pydantic v2** — request/response schemas and settings management (`BaseSettings`)
 - **Pydantic-AI** — agent framework for structured LLM interactions
 - **SQLAlchemy 2.0** — async ORM for persistence (engine/session wired in `app/databases/`)
+- **asyncpg** — async PostgreSQL driver (Supabase)
+- **Alembic** — database schema migration management (`backend/alembic/`)
 - **Python stdlib `logging`** — configured in `app/core/logging.py`
 - **uv** — package/dependency manager and virtual environment tool (replaces pip + venv)
 
@@ -41,11 +43,15 @@ Practice project for building a full-stack web app with a FastAPI backend and Re
 ```
 personal-finance-agent/
 ├── backend/
+│   ├── alembic/                 # Alembic migration environment
+│   │   ├── env.py               # Async migration runner (reads settings.database_url)
+│   │   └── versions/            # Migration scripts (one per schema change)
+│   ├── alembic.ini              # Alembic config (sqlalchemy.url injected from settings)
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py              # FastAPI app instance, router includes, lifespan
 │   │   ├── core/                # Cross-cutting infrastructure
-│   │   │   ├── config.py        # Pydantic BaseSettings (env-driven)
+│   │   │   ├── config.py        # Pydantic BaseSettings (env-driven); db_connect_args property
 │   │   │   └── logging.py       # configure_logging() called on startup
 │   │   ├── databases/           # SQLAlchemy engine + session factory
 │   │   ├── dependencies/        # Shared Depends() factories (db session, agents)
@@ -54,10 +60,9 @@ personal-finance-agent/
 │   │   ├── schemas/             # Pydantic request/response schemas
 │   │   ├── agents/              # Pydantic-AI agent definitions and tools
 │   │   └── services/            # Business logic between routes and models/agents
-│   ├── tests/                   # pytest suite
+│   ├── tests/                   # pytest suite (uses SQLite in-memory)
 │   ├── logs/                    # Runtime log output (contents gitignored)
-│   ├── uploads/                 # User-uploaded files (contents gitignored)
-│   └── app.db                   # SQLite database (gitignored)
+│   └── uploads/                 # User-uploaded files (contents gitignored)
 ├── frontend/
 │   ├── src/
 │   │   ├── api/                 # Typed API client functions
@@ -102,3 +107,5 @@ Backend: `http://127.0.0.1:8000` · Frontend dev server: `http://localhost:5173`
 - `backend/logs/` and `backend/uploads/` are tracked in git via `.gitkeep` but their contents are gitignored.
 - All file-system paths inside the package use `Path(__file__).resolve().parents[N]` — never CWD-relative strings.
 - `import app.*` (not `backend.app.*`) — the package root is `backend/`, added to `sys.path` by `pyproject.toml` for tests and by the CWD when running from `backend/`.
+- **Schema migrations via Alembic.** Run `alembic upgrade head` from `backend/` before starting the app against a new database. Generate new migrations with `alembic revision --autogenerate -m "description"` after changing models.
+- **Tests use SQLite in-memory.** The pytest suite sets `DATABASE_URL=sqlite+aiosqlite:///:memory:` per-fixture and does not require a live PostgreSQL connection.

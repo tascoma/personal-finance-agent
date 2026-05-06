@@ -8,7 +8,8 @@ A personal double-entry accounting system with an AI-powered document and transa
 - **FastAPI** — async web framework with dependency injection
 - **Pydantic AI** — structured LLM agent framework (Claude Sonnet 4.6)
 - **Pydantic v2** — request/response schemas and settings via `BaseSettings`
-- **SQLAlchemy 2.0** — async ORM (SQLite by default, PostgreSQL-compatible)
+- **SQLAlchemy 2.0** — async ORM with asyncpg driver (PostgreSQL / Supabase)
+- **Alembic** — database schema migration management
 - **uv** — dependency and virtual environment management
 
 ### Frontend
@@ -44,17 +45,26 @@ uv sync
 cp .env.example .env
 ```
 
-Fill in `.env` (lives at the project root):
+Fill in `.env` (lives at the project root). Get the `DATABASE_URL` from **Supabase → Project Settings → Database → Transaction pooler** (URI tab, port 6543):
 
 ```env
 APP_ENV=development
 SECRET_KEY=changeme
-DATABASE_URL=sqlite+aiosqlite:///./app.db
+DATABASE_URL=postgresql+asyncpg://postgres.YOUR_PROJECT_REF:YOUR_PASSWORD@aws-0-REGION.pooler.supabase.com:6543/postgres
 ANTHROPIC_API_KEY=your-api-key-here
 ALLOWED_ORIGINS=http://localhost:5173
 ```
 
-### 3. Run the backend
+### 3. Apply database migrations
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+This creates all tables in your Supabase database. Run this once on first setup and after pulling any schema changes.
+
+### 4. Run the backend
 
 ```bash
 cd backend
@@ -70,7 +80,7 @@ uv run uvicorn app.main:app --reload
 
 The API starts at `http://127.0.0.1:8000`.
 
-### 4. Run the frontend dev server
+### 5. Run the frontend dev server
 
 ```bash
 cd frontend
@@ -80,9 +90,9 @@ npm run dev
 
 The UI is served at `http://localhost:5173` and proxies API requests to the backend.
 
-### 5. Run tests
+### 6. Run tests
 
-From the project root:
+Tests use an in-memory SQLite database and do not require a live PostgreSQL connection:
 
 ```bash
 uv run pytest
@@ -131,6 +141,9 @@ Post closing entries to zero out income and expense accounts and roll net income
 ```
 personal-finance-agent/
 ├── backend/
+│   ├── alembic/                 # Alembic migration environment
+│   │   └── versions/            # Migration scripts
+│   ├── alembic.ini              # Alembic config
 │   ├── app/
 │   │   ├── main.py              # FastAPI app instance, router includes, lifespan
 │   │   ├── core/
@@ -143,10 +156,9 @@ personal-finance-agent/
 │   │   ├── schemas/             # Pydantic request/response schemas
 │   │   ├── agents/              # Pydantic AI agents (classifier, statement, paystub, mortgage, reconciliation)
 │   │   └── services/            # Business logic layer
-│   ├── tests/                   # pytest suite
+│   ├── tests/                   # pytest suite (SQLite in-memory)
 │   ├── logs/                    # Runtime logs (gitignored)
-│   ├── uploads/                 # Uploaded documents (gitignored)
-│   └── app.db                   # SQLite database (gitignored)
+│   └── uploads/                 # Uploaded documents (gitignored)
 ├── frontend/
 │   ├── src/
 │   │   ├── api/                 # Typed API client
