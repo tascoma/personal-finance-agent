@@ -14,7 +14,7 @@ from app.databases import init_db
 from app.routes import (
     transactions as api_transactions,
 )
-from app.routes import accounts as api_accounts, dashboard as api_dashboard, documents as api_documents, journal as api_journal, ledger as api_ledger, periods as api_periods, reconciliation as api_reconciliation, statements as api_statements
+from app.routes import accounts as api_accounts, auth as api_auth, dashboard as api_dashboard, documents as api_documents, journal as api_journal, ledger as api_ledger, periods as api_periods, reconciliation as api_reconciliation, statements as api_statements
 
 
 @asynccontextmanager
@@ -44,6 +44,7 @@ async def health_check() -> dict:
 
 # JSON API router — must be mounted before the SPA catch-all
 api_router = APIRouter(prefix="/api/v1")
+api_router.include_router(api_auth.router)
 api_router.include_router(api_dashboard.router)
 api_router.include_router(api_accounts.router)
 api_router.include_router(api_ledger.router)

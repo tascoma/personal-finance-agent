@@ -6,6 +6,7 @@ from app.models.raw_transaction import RawTransaction
 from app.models.reconciliation import Reconciliation
 from app.models.review_queue import ReviewQueue
 from app.models.stated_balance import StatedBalance
+from app.models.user import User
 
 __all__ = [
     "Account",
@@ -17,4 +18,5 @@ __all__ = [
     "StatedBalance",
     "Reconciliation",
     "ReviewQueue",
+    "User",
 ]
