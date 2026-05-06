@@ -1,6 +1,9 @@
 import { NavLink, Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import SvgIcon from './SvgIcon'
+import { useAuth } from '../contexts/AuthContext'
+import { getMe } from '../api/auth'
 import type { Period } from '../types'
 
 interface NavItem {
@@ -23,6 +26,14 @@ interface Props {
 }
 
 export default function Sidebar({ activePeriod }: Props) {
+  const { logout, token } = useAuth()
+  const { data: me } = useQuery({
+    queryKey: ['auth-me'],
+    queryFn: getMe,
+    enabled: !!token,
+    staleTime: Infinity,
+  })
+
   const [theme, setTheme] = useState<'dark' | 'light'>(
     () => (localStorage.getItem('pf-theme') === 'light' ? 'light' : 'dark'),
   )
@@ -111,6 +122,15 @@ export default function Sidebar({ activePeriod }: Props) {
 
       {/* Footer / theme toggle */}
       <div className="sidebar-footer">
+        {me && (
+          <div className="sidebar-user">
+            <span className="sidebar-user-email nav-collapsible">{me.email}</span>
+            <button className="sidebar-signout btn-ghost" onClick={logout} title="Sign out">
+              <SvgIcon name="chevron-right" size={13} />
+              <span className="nav-collapsible">Sign out</span>
+            </button>
+          </div>
+        )}
         <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
           <SvgIcon name="moon" size={14} className="icon theme-icon--light" />
           <SvgIcon name="sun" size={14} className="icon theme-icon--dark" />
