@@ -19,7 +19,7 @@ class ReviewQueue(Base):
             "user_decision IS NULL OR user_decision IN ('approved', 'overridden', 'skipped')",
             name="ck_user_decision",
         ),
-        Index("ix_review_queue_pending", "user_decision", sqlite_where=text("user_decision IS NULL")),
+        Index("ix_review_queue_pending", "user_decision", postgresql_where=text("user_decision IS NULL")),
     )
 
     review_id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)

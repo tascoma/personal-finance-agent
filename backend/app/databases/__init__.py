@@ -13,6 +13,7 @@ engine = create_async_engine(
     settings.database_url,
     echo=settings.db_echo,
     pool_pre_ping=settings.db_pool_pre_ping,
+    connect_args=settings.db_connect_args,
 )
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
