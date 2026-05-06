@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     app_env: str = "development"
     secret_key: str = "changeme"
-    database_url: str = "sqlite+aiosqlite:///./app.db"
+    database_url: str = "postgresql+asyncpg://user:pass@localhost:5432/finance"
     anthropic_api_key: str = ""
     host: str = "127.0.0.1"
     port: int = 8000
@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     # Database connection options
     db_pool_pre_ping: bool = True
     db_echo: bool = False
+
+    @property
+    def db_connect_args(self) -> dict:
+        return {"statement_cache_size": 0} if self.database_url.startswith("postgresql") else {}
 
     # Maximum file upload size in megabytes
     max_upload_size_mb: int = 20

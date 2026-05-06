@@ -11,7 +11,6 @@ from decimal import Decimal
 from typing import Sequence
 
 from sqlalchemy import select
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -37,25 +36,23 @@ async def upsert_balance(
     if period.status != "open":
         raise BalanceError("Balances can only be entered on an open period")
 
-    stmt = sqlite_insert(StatedBalance).values(
-        period_id=period_id,
-        account_code=account_code,
-        stated_balance=stated_balance,
-    )
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["period_id", "account_code"],
-        set_={"stated_balance": stmt.excluded.stated_balance},
-    )
-    await db.execute(stmt)
-    await db.commit()
-
     row = await db.scalar(
         select(StatedBalance).where(
             StatedBalance.period_id == period_id,
             StatedBalance.account_code == account_code,
         )
     )
-    assert row is not None  # we just upserted it
+    if row is None:
+        row = StatedBalance(
+            period_id=period_id,
+            account_code=account_code,
+            stated_balance=stated_balance,
+        )
+        db.add(row)
+    else:
+        row.stated_balance = stated_balance
+    await db.commit()
+    await db.refresh(row)
     return row
 
 
