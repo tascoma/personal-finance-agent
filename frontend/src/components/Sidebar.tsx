@@ -64,15 +64,19 @@ export default function Sidebar({ activePeriod }: Props) {
 
   return (
     <nav className="sidebar">
-      {/* Logo */}
+      {/* Logo + theme toggle */}
       <div className="sidebar-logo-wrap">
         <div className="sidebar-logo-icon">
           <SvgIcon name="spark" size={15} style={{ stroke: '#05080f', strokeWidth: 2.2 }} />
         </div>
-        <div className="nav-collapsible">
+        <div className="nav-collapsible sidebar-logo-text-wrap">
           <div className="sidebar-logo-text">Finance Agent</div>
           <div className="sidebar-logo-sub">Personal Ledger</div>
         </div>
+        <button className="theme-toggle-icon" onClick={toggleTheme} aria-label="Toggle theme">
+          <SvgIcon name="moon" size={14} className="icon theme-icon--light" />
+          <SvgIcon name="sun" size={14} className="icon theme-icon--dark" />
+        </button>
       </div>
 
       {/* Active period block */}
@@ -120,7 +124,7 @@ export default function Sidebar({ activePeriod }: Props) {
         </button>
       </div>
 
-      {/* Footer / theme toggle */}
+      {/* Footer / user profile */}
       <div className="sidebar-footer">
         {me && (
           <div className="sidebar-user">
