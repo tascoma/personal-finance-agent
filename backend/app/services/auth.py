@@ -29,30 +29,49 @@ def _make_token(data: dict, expires_delta: timedelta) -> str:
 
 def create_access_token(user_id: uuid.UUID) -> str:
     return _make_token(
-        {"sub": str(user_id)},
+        {"sub": str(user_id), "type": "access"},
         timedelta(minutes=settings.access_token_expire_minutes),
     )
 
 
-def create_refresh_token(user_id: uuid.UUID) -> str:
+def create_refresh_token(user_id: uuid.UUID, token_version: int) -> str:
     return _make_token(
-        {"sub": str(user_id)},
+        {"sub": str(user_id), "type": "refresh", "ver": token_version},
         timedelta(days=settings.refresh_token_expire_days),
     )
 
 
-def decode_token(token: str) -> uuid.UUID:
-    """Decode and validate a JWT, returning the user_id. Raises ValueError on failure."""
+def _decode_jwt(token: str) -> dict:
+    """Decode and validate JWT signature/expiry; return raw payload."""
     try:
-        payload = jwt.decode(
-            token, settings.secret_key, algorithms=[settings.jwt_algorithm]
-        )
-        sub: str | None = payload.get("sub")
-        if sub is None:
-            raise ValueError("Token missing 'sub' claim")
-        return uuid.UUID(sub)
+        return jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm])
     except JWTError as exc:
         raise ValueError(f"Invalid token: {exc}") from exc
+
+
+def decode_access_token(token: str) -> uuid.UUID:
+    """Validate an access token and return user_id. Raises ValueError on failure."""
+    payload = _decode_jwt(token)
+    if payload.get("type") != "access":
+        raise ValueError("Expected access token")
+    sub: str | None = payload.get("sub")
+    if sub is None:
+        raise ValueError("Token missing 'sub' claim")
+    return uuid.UUID(sub)
+
+
+def decode_refresh_token(token: str) -> tuple[uuid.UUID, int]:
+    """Validate a refresh token; return (user_id, token_version). Raises ValueError on failure."""
+    payload = _decode_jwt(token)
+    if payload.get("type") != "refresh":
+        raise ValueError("Expected refresh token")
+    sub: str | None = payload.get("sub")
+    if sub is None:
+        raise ValueError("Token missing 'sub' claim")
+    ver = payload.get("ver")
+    if ver is None:
+        raise ValueError("Token missing version claim")
+    return uuid.UUID(sub), int(ver)
 
 
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
@@ -87,3 +106,11 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
     if not user.is_active:
         raise AuthError("Account is disabled")
     return user
+
+
+async def invalidate_tokens(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """Increment token_version, invalidating all outstanding refresh tokens for this user."""
+    user = await db.get(User, user_id)
+    if user is not None:
+        user.token_version += 1
+        await db.commit()

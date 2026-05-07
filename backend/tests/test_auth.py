@@ -154,3 +154,43 @@ async def test_logout_clears_cookie(client: AsyncClient):
     await client.post("/api/v1/auth/login", json=LOGIN_PAYLOAD)
     resp = await client.post("/api/v1/auth/logout")
     assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_logout_invalidates_refresh_token(client: AsyncClient):
+    """Refresh token must be rejected after logout (server-side revocation)."""
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    await client.post("/api/v1/auth/login", json=LOGIN_PAYLOAD)
+    await client.post("/api/v1/auth/logout")
+    resp = await client.post("/api/v1/auth/refresh")
+    assert resp.status_code == 401
+
+
+# ── Token type security ───────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_rejected_as_bearer(client: AsyncClient):
+    """A refresh token must not be accepted as a Bearer access token."""
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    login_resp = await client.post("/api/v1/auth/login", json=LOGIN_PAYLOAD)
+    refresh_token = login_resp.cookies.get("refresh_token")
+    assert refresh_token is not None
+
+    resp = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {refresh_token}"}
+    )
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_access_token_rejected_as_refresh_cookie(client: AsyncClient):
+    """An access token must not be accepted at the /refresh endpoint."""
+    await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    login_resp = await client.post("/api/v1/auth/login", json=LOGIN_PAYLOAD)
+    access_token = login_resp.json()["access_token"]
+
+    # Manually set the refresh_token cookie to the access token value
+    client.cookies.set("refresh_token", access_token)
+    resp = await client.post("/api/v1/auth/refresh")
+    assert resp.status_code == 401

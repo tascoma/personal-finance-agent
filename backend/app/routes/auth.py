@@ -12,8 +12,9 @@ from app.services.auth import (
     authenticate_user,
     create_access_token,
     create_refresh_token,
-    decode_token,
+    decode_refresh_token,
     get_user_by_id,
+    invalidate_tokens,
     register_user,
 )
 
@@ -63,7 +64,7 @@ async def login(
         ) from exc
 
     access_token = create_access_token(user.user_id)
-    refresh_token = create_refresh_token(user.user_id)
+    refresh_token = create_refresh_token(user.user_id, user.token_version)
     _set_refresh_cookie(response, refresh_token)
     logger.info("User %s logged in", user.user_id)
     return TokenResponse(access_token=access_token)
@@ -80,7 +81,7 @@ async def refresh(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token"
         )
     try:
-        user_id = decode_token(refresh_token)
+        user_id, token_version = decode_refresh_token(refresh_token)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
@@ -91,15 +92,29 @@ async def refresh(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session"
         )
+    if token_version != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Session has been revoked"
+        )
 
     new_access = create_access_token(user.user_id)
-    new_refresh = create_refresh_token(user.user_id)
+    new_refresh = create_refresh_token(user.user_id, user.token_version)
     _set_refresh_cookie(response, new_refresh)
     return TokenResponse(access_token=new_access)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(response: Response) -> None:
+async def logout(
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+    refresh_token: str | None = Cookie(default=None, alias=_REFRESH_COOKIE),
+) -> None:
+    if refresh_token is not None:
+        try:
+            user_id, _ = decode_refresh_token(refresh_token)
+            await invalidate_tokens(db, user_id)
+        except ValueError:
+            pass  # Invalid/expired token — nothing to revoke, still clear the cookie
     response.delete_cookie(key=_REFRESH_COOKIE, path="/api/v1/auth")
 
 
