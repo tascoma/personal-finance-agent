@@ -118,7 +118,7 @@ async def update_status(
 
     period.status = new_status
     if new_status == "closed":
-        period.closed_at = datetime.now(timezone.utc)
+        period.closed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.commit()
     await db.refresh(period)
     logger.info("Period %s → %s", period.period_id, new_status)
