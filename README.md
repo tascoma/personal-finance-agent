@@ -29,7 +29,8 @@ A personal double-entry accounting system with an AI-powered document and transa
 - AI reconciliation analyzer surfaces likely gap causes and remediation steps
 - Automatic closing entries to zero income/expense accounts and roll equity
 - Financial statements: Balance Sheet, Income Statement, Cash Flow Statement
-- Dashboard with net worth trends and expense breakdowns
+- Dashboard with net worth trends, top expense categories, and a retirement savings rate KPI (retirement contributions ÷ salary + bonus)
+- Per-request `x-request-id` correlation between client and server logs
 
 ## Getting started
 
@@ -173,15 +174,17 @@ personal-finance-agent/
 │   │   ├── routes/              # APIRouter modules (auth, dashboard, accounts, ledger, periods…)
 │   │   ├── models/              # SQLAlchemy ORM models (User, …)
 │   │   ├── schemas/             # Pydantic request/response schemas (auth, …)
-│   │   ├── agents/              # Pydantic AI agents (classifier, statement, paystub, mortgage, reconciliation)
+│   │   ├── agents/              # Pydantic AI agents (classifier, statement, paystub, mortgage, reconciliation) + shared _base.py factory
 │   │   └── services/            # Business logic layer (auth, …)
+│   ├── scripts/                 # One-off operational/diagnostic scripts
 │   ├── tests/                   # pytest suite (SQLite in-memory)
 │   ├── logs/                    # Runtime logs (gitignored)
 │   └── uploads/                 # Uploaded documents (gitignored)
 ├── frontend/
 │   ├── src/
 │   │   ├── api/                 # Typed API client
-│   │   ├── components/          # Shared React components
+│   │   ├── components/          # Shared React components (incl. ErrorBoundary)
+│   │   ├── contexts/            # React contexts (AuthContext)
 │   │   ├── pages/               # Page-level components
 │   │   ├── types/               # TypeScript types
 │   │   └── utils/

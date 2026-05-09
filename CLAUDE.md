@@ -60,8 +60,10 @@ personal-finance-agent/
 │   │   ├── routes/              # APIRouter modules (one per resource/feature)
 │   │   ├── models/              # SQLAlchemy ORM models (including User)
 │   │   ├── schemas/             # Pydantic request/response schemas (including auth schemas)
-│   │   ├── agents/              # Pydantic-AI agent definitions and tools
+│   │   ├── agents/              # Pydantic-AI agents (each module = prompt + output schema)
+│   │   │   └── _base.py         # Shared Agent factory + AgentError-wrapping run_agent()
 │   │   └── services/            # Business logic between routes and models/agents
+│   ├── scripts/                 # One-off operational/diagnostic scripts
 │   ├── tests/                   # pytest suite (uses SQLite in-memory)
 │   ├── logs/                    # Runtime log output (contents gitignored)
 │   └── uploads/                 # User-uploaded files (contents gitignored)
@@ -112,3 +114,5 @@ Backend: `http://127.0.0.1:8000` · Frontend dev server: `http://localhost:5173`
 - **Schema migrations via Alembic.** Run `alembic upgrade head` from `backend/` before starting the app against a new database. Generate new migrations with `alembic revision --autogenerate -m "description"` after changing models.
 - **Tests use SQLite in-memory.** The pytest suite sets `DATABASE_URL=sqlite+aiosqlite:///:memory:` per-fixture and does not require a live PostgreSQL connection.
 - **Authentication.** JWT-based auth with short-lived access tokens (Bearer) and long-lived refresh tokens (HttpOnly cookie, scoped to `/api/v1/auth`). Use the `get_current_user` dependency from `app.dependencies` to protect any route. The `services/auth.py` layer handles hashing, JWT creation/decoding, and DB lookups; the route layer only maps `AuthError` → HTTP status codes. The `SECRET_KEY` env var must be set to a non-default value in production.
+- **Agents.** Each agent module under `app/agents/` defines only its prompt and output Pydantic model, then calls `build_agent` / `run_agent` from `_base.py`. Failures inside `run_agent` are wrapped as `AgentError` — route handlers catch `AgentError` (not bare `Exception`) and return a generic 502 so internal exception strings never leak to clients.
+- **Request IDs and logging.** `RequestIdMiddleware` reads the `x-request-id` header (or mints one) per request, stores it in a `ContextVar`, and echoes it back in the response. The log format is `%(asctime)s %(levelname)s [%(request_id)s] %(name)s %(message)s`, so any log line emitted during a request is correlatable with the client's request id.
