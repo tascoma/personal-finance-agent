@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, act, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { AuthProvider, useAuth } from '../AuthContext'
 
 vi.mock('../../api/auth', () => ({
@@ -9,9 +9,14 @@ vi.mock('../../api/auth', () => ({
 
 vi.mock('../../api/client', () => ({
   configureClient: vi.fn(),
+  ApiError: class ApiError extends Error {
+    constructor(public status: number, public detail: string) {
+      super(detail)
+    }
+  },
 }))
 
-import { refreshToken, logoutUser } from '../../api/auth'
+import { refreshToken } from '../../api/auth'
 
 function TestConsumer() {
   const { token, isLoading } = useAuth()

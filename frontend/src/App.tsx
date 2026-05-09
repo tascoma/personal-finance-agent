@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react'
 import { Navigate, Routes, Route } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
+import ErrorBoundary from './components/ErrorBoundary'
 import DashboardPage from './pages/DashboardPage'
 import AccountsPage from './pages/AccountsPage'
 import LedgerPage from './pages/LedgerPage'
@@ -22,19 +23,21 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-      <Route path="/accounts" element={<ProtectedRoute><AccountsPage /></ProtectedRoute>} />
-      {/* /ledger/statements must come before /ledger to avoid prefix match */}
-      <Route path="/ledger/statements" element={<ProtectedRoute><StatementsPage /></ProtectedRoute>} />
-      <Route path="/ledger" element={<ProtectedRoute><LedgerPage /></ProtectedRoute>} />
-      <Route path="/periods" element={<ProtectedRoute><PeriodsListPage /></ProtectedRoute>} />
-      <Route path="/periods/:periodId" element={<ProtectedRoute><PeriodDetailPage /></ProtectedRoute>} />
-      <Route path="/periods/:periodId/transactions" element={<ProtectedRoute><TransactionsPage /></ProtectedRoute>} />
-      <Route path="/periods/:periodId/journal" element={<ProtectedRoute><JournalPage /></ProtectedRoute>} />
-      <Route path="/periods/:periodId/reconcile" element={<ProtectedRoute><ReconcilePage /></ProtectedRoute>} />
-    </Routes>
+    <ErrorBoundary>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/accounts" element={<ProtectedRoute><AccountsPage /></ProtectedRoute>} />
+        {/* /ledger/statements must come before /ledger to avoid prefix match */}
+        <Route path="/ledger/statements" element={<ProtectedRoute><StatementsPage /></ProtectedRoute>} />
+        <Route path="/ledger" element={<ProtectedRoute><LedgerPage /></ProtectedRoute>} />
+        <Route path="/periods" element={<ProtectedRoute><PeriodsListPage /></ProtectedRoute>} />
+        <Route path="/periods/:periodId" element={<ProtectedRoute><PeriodDetailPage /></ProtectedRoute>} />
+        <Route path="/periods/:periodId/transactions" element={<ProtectedRoute><TransactionsPage /></ProtectedRoute>} />
+        <Route path="/periods/:periodId/journal" element={<ProtectedRoute><JournalPage /></ProtectedRoute>} />
+        <Route path="/periods/:periodId/reconcile" element={<ProtectedRoute><ReconcilePage /></ProtectedRoute>} />
+      </Routes>
+    </ErrorBoundary>
   )
 }
