@@ -40,6 +40,36 @@ Practice project for building a full-stack web app with a FastAPI backend and Re
 - **Vite** — dev server and build tool
 - **Node / npm** — frontend dependency management
 
+## Platforms
+
+External services this app depends on:
+
+- **GitHub** (`tascoma/personal-finance-agent`) — source of truth; push to `main` triggers Render auto-deploy
+- **Render** — hosts the web service (`srv-d7vngnlckfvc73eq4uq0`, region `oregon`) at https://personal-finance-agent-ipuu.onrender.com. Builds the multi-stage Dockerfile on every commit to `main`
+- **Supabase** — managed PostgreSQL accessed via `asyncpg`. Schema is owned by Alembic — never edit tables in the Supabase UI. Connection string lives in `DATABASE_URL` (use the Supabase transaction pooler URI on port 6543)
+- **Anthropic (Claude)** — LLM behind every Pydantic-AI agent in `app/agents/`. Requires `ANTHROPIC_API_KEY`. Default model is Claude Sonnet 4.6
+
+Build-time package sources: **PyPI** (via `uv`), **npm registry**, **Docker Hub / GHCR** (`node:20-alpine`, `ghcr.io/astral-sh/uv:python3.12-bookworm-slim`).
+
+**Frontend lockfile gotcha:** Render's `node:20-alpine` ships **npm 10.8.2**. Lockfiles generated with newer npm omit `optional`/`os` metadata on platform-specific packages and break `npm ci` in the build. If you regenerate `frontend/package-lock.json`, do it with `npx -y npm@10.8.2 install`.
+
+## Branching workflow
+
+- **`main`** — production. Render auto-deploys from every push to `main`. Protected: changes only land via pull request.
+- **`dev`** — long-lived integration branch. All day-to-day work happens here or on branches cut from it. Never delete.
+- **Feature branches** — branched off `dev` (e.g. `feat/transaction-import`, `fix/auth-refresh`). Merge back into `dev` via PR (or fast-forward locally for trivial work).
+- **Promotion to prod** — when `dev` is stable, open a PR from `dev` → `main`. Merging that PR triggers the Render deploy.
+
+Day-to-day:
+
+```bash
+git checkout dev && git pull
+git checkout -b feat/<short-name>      # do the work, commit
+git push -u origin feat/<short-name>   # open PR into dev
+# after merge:
+git checkout dev && git pull           # delete the feature branch
+```
+
 ## Project structure
 
 ```
