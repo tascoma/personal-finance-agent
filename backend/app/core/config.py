@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     model_config = {"env_file": Path(__file__).resolve().parents[3] / ".env"}
 
     @model_validator(mode="after")
+    def _normalize_database_url(self) -> "Settings":
+        # Render's managed Postgres injects URLs as `postgresql://...`; SQLAlchemy needs
+        # an explicit async driver. Rewrite only when no driver is specified.
+        if self.database_url.startswith("postgresql://"):
+            self.database_url = "postgresql+asyncpg://" + self.database_url[len("postgresql://"):]
+        return self
+
+    @model_validator(mode="after")
     def _check_production_secret(self) -> "Settings":
         if self.app_env == "production" and self.secret_key == "changeme":
             raise ValueError("SECRET_KEY must be set to a non-default value in production")

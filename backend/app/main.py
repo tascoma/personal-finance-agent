@@ -12,7 +12,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
 from app.core.logging import configure_logging, request_id_ctx
-from app.databases import init_db
 from app.routes import (
     accounts as api_accounts,
     auth as api_auth,
@@ -30,7 +29,6 @@ from app.routes import (
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     configure_logging()
-    await init_db()
     yield
     from app.databases import engine as _engine
     await _engine.dispose()
@@ -48,7 +46,14 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         return response
 
 
-app = FastAPI(title="Personal Finance Agent", lifespan=lifespan)
+_is_production = settings.app_env == "production"
+app = FastAPI(
+    title="Personal Finance Agent",
+    lifespan=lifespan,
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
+)
 
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
