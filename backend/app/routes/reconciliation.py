@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents._base import AgentError
 from app.agents.reconciliation import ReconciliationAnalysis, run_reconciliation_agent
 from app.dependencies import get_current_user, get_db_session
 from app.models.reconciliation import Reconciliation
@@ -166,9 +167,8 @@ async def analyze_reconciliation(
     if gaps:
         try:
             analysis = await run_reconciliation_agent(gaps)
-        except Exception as exc:
-            logger.error("Reconciliation analysis failed: %s", exc, exc_info=True)
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except AgentError as exc:
+            raise HTTPException(status_code=502, detail="Reconciliation analysis failed") from exc
 
     return await _build_page(db, period_id, analysis=analysis)
 

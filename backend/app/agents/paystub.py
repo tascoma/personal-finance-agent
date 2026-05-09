@@ -1,15 +1,9 @@
-import logging
 from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel
-from pydantic_ai import Agent
-from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.providers.anthropic import AnthropicProvider
 
-from app.core.config import settings
-
-logger = logging.getLogger(__name__)
+from app.agents._base import build_agent, run_agent
 
 SYSTEM_PROMPT = (
     "Extract ALL pay periods found in the document — some paystubs include "
@@ -38,25 +32,11 @@ class ExtractedPaystubs(BaseModel):
     paystubs: list[ExtractedPaystub]
 
 
-agent = Agent(
-    AnthropicModel(
-        settings.anthropic_model,
-        provider=AnthropicProvider(api_key=settings.anthropic_api_key),
-    ),
-    output_type=ExtractedPaystubs,
-    system_prompt=SYSTEM_PROMPT,
-)
+agent = build_agent(ExtractedPaystubs, SYSTEM_PROMPT)
 
 
 async def run_paystub_extractor(text: str) -> ExtractedPaystubs:
-    logger.debug("Running paystub extractor (text length=%d)", len(text))
-    try:
-        result = await agent.run(text)
-    except Exception:
-        logger.exception("Paystub extractor failed")
-        raise
-    output = result.output
+    output = await run_agent(agent, "paystub extractor", text)
     for paystub in output.paystubs:
         paystub.lines = [line for line in paystub.lines if line.amount != 0]
-    logger.debug("Paystub extractor succeeded: %d paystub(s) extracted", len(output.paystubs))
     return output

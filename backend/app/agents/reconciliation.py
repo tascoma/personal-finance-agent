@@ -1,14 +1,8 @@
-import logging
 from decimal import Decimal
 
 from pydantic import BaseModel
-from pydantic_ai import Agent
-from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.providers.anthropic import AnthropicProvider
 
-from app.core.config import settings
-
-logger = logging.getLogger(__name__)
+from app.agents._base import build_agent, run_agent
 
 SYSTEM_PROMPT = (
     "You are a personal finance bookkeeper reviewing monthly reconciliation gaps. "
@@ -43,22 +37,8 @@ class ReconciliationAnalysis(BaseModel):
     overall_summary: str
 
 
-agent = Agent(
-    AnthropicModel(
-        settings.anthropic_model,
-        provider=AnthropicProvider(api_key=settings.anthropic_api_key),
-    ),
-    output_type=ReconciliationAnalysis,
-    system_prompt=SYSTEM_PROMPT,
-)
+agent = build_agent(ReconciliationAnalysis, SYSTEM_PROMPT)
 
 
 async def run_reconciliation_agent(gaps: list[AccountGap]) -> ReconciliationAnalysis:
-    logger.debug("Running reconciliation agent (%d gap(s))", len(gaps))
-    try:
-        result = await agent.run(gaps)
-    except Exception:
-        logger.exception("Reconciliation agent failed")
-        raise
-    logger.debug("Reconciliation agent succeeded: %d account(s) analysed", len(result.output.accounts))
-    return result.output
+    return await run_agent(agent, "reconciliation agent", gaps)

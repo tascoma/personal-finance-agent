@@ -1,14 +1,8 @@
-import logging
 from datetime import date
 
 from pydantic import BaseModel
-from pydantic_ai import Agent
-from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.providers.anthropic import AnthropicProvider
 
-from app.core.config import settings
-
-logger = logging.getLogger(__name__)
+from app.agents._base import build_agent, run_agent
 
 SYSTEM_PROMPT = (
     "You extract transaction rows from a bank or credit card statement. "
@@ -29,22 +23,8 @@ class ExtractedStatement(BaseModel):
     transactions: list[ExtractedTxn]
 
 
-agent = Agent(
-    AnthropicModel(
-        settings.anthropic_model,
-        provider=AnthropicProvider(api_key=settings.anthropic_api_key),
-    ),
-    output_type=ExtractedStatement,
-    system_prompt=SYSTEM_PROMPT,
-)
+agent = build_agent(ExtractedStatement, SYSTEM_PROMPT)
 
 
 async def run_statement_extractor(text: str) -> ExtractedStatement:
-    logger.debug("Running statement extractor (text length=%d)", len(text))
-    try:
-        result = await agent.run(text)
-    except Exception:
-        logger.exception("Statement extractor failed")
-        raise
-    logger.debug("Statement extractor succeeded: %d transaction(s) extracted", len(result.output.transactions))
-    return result.output
+    return await run_agent(agent, "statement extractor", text)
