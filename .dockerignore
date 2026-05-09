@@ -1,0 +1,37 @@
+.git/
+.gitignore
+.venv/
+.python-version
+.pytest_cache/
+.claude/
+.vscode/
+.idea/
+
+# Python build artifacts
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+
+# Frontend build artifacts (rebuilt inside the image)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+
+# Local-only data and logs
+.env
+*.db
+backend/logs/*
+!backend/logs/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Tests are not needed at runtime
+backend/tests/
+backend/scripts/
+
+# Docs and editor files
+*.md
+!README.md
+.DS_Store
