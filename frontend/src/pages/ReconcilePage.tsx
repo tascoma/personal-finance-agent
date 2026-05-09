@@ -15,7 +15,6 @@ import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
 import PeriodStepper from '../components/PeriodStepper'
 import Banner from '../components/Banner'
-import EmptyState from '../components/EmptyState'
 import SvgIcon from '../components/SvgIcon'
 import { fmtPeriod } from '../utils/format'
 
@@ -28,7 +27,7 @@ function fmtGap(gap: string) {
 
 function fmtSigned(val: string) {
   const n = parseFloat(val)
-  if (n < 0) return <span style={{ color: 'var(--red)' }}>({Math.abs(n).toFixed(2)})</span>
+  if (n < 0) return <span className="color-red">({Math.abs(n).toFixed(2)})</span>
   return <>{n.toFixed(2)}</>
 }
 
@@ -82,7 +81,7 @@ export default function ReconcilePage() {
     onError: (e: Error) => setError(e.message),
   })
 
-  if (isLoading || !data) return <Layout><p style={{ color: 'var(--text-3)' }}>Loading…</p></Layout>
+  if (isLoading || !data) return <Layout><p className="color-text3">Loading…</p></Layout>
 
   const { period, details, ran, has_gaps, has_non_investment_gaps, analysis, temp_preview, equity_preview } = data
   const canEdit = period.status === 'pending_close' || period.status === 'closed'
@@ -165,7 +164,7 @@ export default function ReconcilePage() {
                         <td className="mono" style={{ textAlign: 'right', fontSize: 13 }}>{parseFloat(d.beginning_balance).toFixed(2)}</td>
                         <td className="mono" style={{ textAlign: 'right', fontSize: 13 }}>
                           {parseFloat(d.period_net_change) < 0
-                            ? <span style={{ color: 'var(--red)' }}>{parseFloat(d.period_net_change).toFixed(2)}</span>
+                            ? <span className="color-red">{parseFloat(d.period_net_change).toFixed(2)}</span>
                             : parseFloat(d.period_net_change).toFixed(2)}
                         </td>
                         <td className="mono" style={{ textAlign: 'right', fontSize: 13 }}>{parseFloat(d.computed_balance).toFixed(2)}</td>

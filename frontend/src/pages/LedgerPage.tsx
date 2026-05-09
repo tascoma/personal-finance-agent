@@ -6,12 +6,7 @@ import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
 import EmptyState from '../components/EmptyState'
-import { fmtPeriod, fmtDate } from '../utils/format'
-
-function fmtAmt(v: string) {
-  const n = parseFloat(v)
-  return n > 0 ? `$${n.toFixed(2)}` : '—'
-}
+import { fmtPeriod, fmtDate, fmtDebitCredit } from '../utils/format'
 
 export default function LedgerPage() {
   const { data, isLoading, error } = useQuery({
@@ -27,8 +22,8 @@ export default function LedgerPage() {
     <Layout>
       <PageHeader title="Ledger" subtitle="All journal entries, grouped by period" />
 
-      {isLoading && <p style={{ color: 'var(--text-3)' }}>Loading…</p>}
-      {error && <p style={{ color: 'var(--red)' }}>Failed to load ledger.</p>}
+      {isLoading && <p className="color-text3">Loading…</p>}
+      {error && <p className="color-red">Failed to load ledger.</p>}
 
       {!isLoading && !error && !data?.periods.length && (
         <div className="card">
@@ -110,10 +105,10 @@ export default function LedgerPage() {
                                     </td>
                                     <td className="color-text3" style={{ fontSize: 12 }}>{line.memo ?? ''}</td>
                                     <td className="mono text-right" style={{ color: parseFloat(line.debit_amount) > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>
-                                      {fmtAmt(line.debit_amount)}
+                                      {fmtDebitCredit(line.debit_amount)}
                                     </td>
                                     <td className="mono text-right" style={{ color: parseFloat(line.credit_amount) > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>
-                                      {fmtAmt(line.credit_amount)}
+                                      {fmtDebitCredit(line.credit_amount)}
                                     </td>
                                   </tr>
                                 )

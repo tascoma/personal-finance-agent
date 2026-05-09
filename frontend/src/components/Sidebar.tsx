@@ -135,13 +135,6 @@ export default function Sidebar({ activePeriod }: Props) {
             </button>
           </div>
         )}
-        <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
-          <SvgIcon name="moon" size={14} className="icon theme-icon--light" />
-          <SvgIcon name="sun" size={14} className="icon theme-icon--dark" />
-          <span className="theme-label--light nav-collapsible">Dark mode</span>
-          <span className="theme-label--dark nav-collapsible">Light mode</span>
-        </button>
-        <div className="sidebar-version nav-collapsible">Finance Agent · v0.1</div>
       </div>
     </nav>
   )

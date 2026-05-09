@@ -12,8 +12,14 @@ export function fmtDate(isoDate: string): string {
 
 export function fmtMoney(val: string | number): string {
   const n = typeof val === 'string' ? parseFloat(val) : val
-  if (n < 0) return `$(${Math.abs(n).toFixed(2)})`
-  return `$${n.toFixed(2)}`
+  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return n < 0 ? `($${abs})` : `$${abs}`
+}
+
+// For debit/credit columns: show the amount only when positive, otherwise em-dash.
+export function fmtDebitCredit(val: string | number): string {
+  const n = typeof val === 'string' ? parseFloat(val) : val
+  return n > 0 ? `$${n.toFixed(2)}` : '—'
 }
 
 export function fmtStatus(status: string): string {

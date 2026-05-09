@@ -12,7 +12,7 @@ type Tab = 'balance_sheet' | 'income_statement' | 'cashflows'
 function Money({ val }: { val: string }) {
   const n = parseFloat(val)
   const fmt = (v: number) => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-  if (n < 0) return <span style={{ color: 'var(--red)' }}>${fmt(Math.abs(n))}</span>
+  if (n < 0) return <span className="color-red">${fmt(Math.abs(n))}</span>
   return <span>${fmt(n)}</span>
 }
 
@@ -165,8 +165,8 @@ export default function StatementsPage() {
             </div>
           </div>
           <div className="card-bd">
-            {bsQ.isLoading && <p style={{ color: 'var(--text-3)' }}>Loading…</p>}
-            {bsQ.error && <p style={{ color: 'var(--red)' }}>Failed to load balance sheet.</p>}
+            {bsQ.isLoading && <p className="color-text3">Loading…</p>}
+            {bsQ.error && <p className="color-red">Failed to load balance sheet.</p>}
             {bs && !bs.periods.length && <EmptyState message="No periods found." />}
             {bs && bs.periods.length > 0 && (
               <div style={{ overflowX: 'auto' }}>
@@ -265,8 +265,8 @@ export default function StatementsPage() {
             </div>
           </div>
           <div className="card-bd">
-            {incQ.isLoading && <p style={{ color: 'var(--text-3)' }}>Loading…</p>}
-            {incQ.error && <p style={{ color: 'var(--red)' }}>Failed to load income statement.</p>}
+            {incQ.isLoading && <p className="color-text3">Loading…</p>}
+            {incQ.error && <p className="color-red">Failed to load income statement.</p>}
             {inc && (
               <>
                 <h3 style={{ fontSize: 14, margin: '0 0 6px 0' }}>Income</h3>
@@ -299,8 +299,8 @@ export default function StatementsPage() {
             </div>
           </div>
           <div className="card-bd">
-            {cfQ.isLoading && <p style={{ color: 'var(--text-3)' }}>Loading…</p>}
-            {cfQ.error && <p style={{ color: 'var(--red)' }}>Failed to load cash flows.</p>}
+            {cfQ.isLoading && <p className="color-text3">Loading…</p>}
+            {cfQ.error && <p className="color-red">Failed to load cash flows.</p>}
             {cf && (
               <>
                 <h3 style={{ fontSize: 14, margin: '0 0 6px 0' }}>Operating Activities</h3>

@@ -32,8 +32,8 @@ export default function AccountsPage() {
     <Layout>
       <PageHeader title="Chart of Accounts" subtitle="All accounts in your personal ledger" />
 
-      {isLoading && <p style={{ color: 'var(--text-3)' }}>Loading…</p>}
-      {error && <p style={{ color: 'var(--red)' }}>Failed to load accounts.</p>}
+      {isLoading && <p className="color-text3">Loading…</p>}
+      {error && <p className="color-red">Failed to load accounts.</p>}
 
       {!isLoading && !error && (
         <>

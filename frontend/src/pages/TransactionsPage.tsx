@@ -7,7 +7,6 @@ import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
 import EmptyState from '../components/EmptyState'
 import ConfidencePill from '../components/ConfidencePill'
-import SvgIcon from '../components/SvgIcon'
 import { fmtPeriod } from '../utils/format'
 
 export default function TransactionsPage() {
@@ -42,7 +41,7 @@ export default function TransactionsPage() {
       />
 
       {detailQ.isLoading || txnsQ.isLoading ? (
-        <p style={{ color: 'var(--text-3)' }}>Loading…</p>
+        <p className="color-text3">Loading…</p>
       ) : (
         <div className="card">
           <div className="card-hd">

@@ -19,15 +19,10 @@ import Banner from '../components/Banner'
 import EmptyState from '../components/EmptyState'
 import ConfidencePill from '../components/ConfidencePill'
 import SvgIcon from '../components/SvgIcon'
-import { fmtPeriod, fmtStatus } from '../utils/format'
+import { fmtPeriod, fmtStatus, fmtDebitCredit } from '../utils/format'
 import type { JournalLineCreate } from '../types'
 
 type Tab = 'staged' | 'approved' | 'posted'
-
-function fmtAmt(v: string) {
-  const n = parseFloat(v)
-  return n > 0 ? `$${n.toFixed(2)}` : '—'
-}
 
 export default function JournalPage() {
   const { periodId } = useParams<{ periodId: string }>()
@@ -150,7 +145,7 @@ export default function JournalPage() {
     onError: (e: Error) => setError(e.message),
   })
 
-  if (isLoading || !data) return <Layout><p style={{ color: 'var(--text-3)' }}>Loading…</p></Layout>
+  if (isLoading || !data) return <Layout><p className="color-text3">Loading…</p></Layout>
 
   const { period, accounts, staged, approved, entries, has_unclassified, docs_missing_source, next_status, prev_status } = data
   const accountsByCode = Object.fromEntries(accounts.map((a) => [a.account_code, a]))
@@ -426,8 +421,8 @@ export default function JournalPage() {
                             <tr key={line.line_id}>
                               <td className="mono" style={{ fontSize: 13 }}>{line.account_code}{acct ? ` · ${acct.account_name}` : ''}</td>
                               <td className="color-text3" style={{ fontSize: 12 }}>{line.memo ?? ''}</td>
-                              <td className="mono text-right" style={{ color: parseFloat(line.debit_amount) > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>{fmtAmt(line.debit_amount)}</td>
-                              <td className="mono text-right" style={{ color: parseFloat(line.credit_amount) > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>{fmtAmt(line.credit_amount)}</td>
+                              <td className="mono text-right" style={{ color: parseFloat(line.debit_amount) > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>{fmtDebitCredit(line.debit_amount)}</td>
+                              <td className="mono text-right" style={{ color: parseFloat(line.credit_amount) > 0 ? 'var(--text-1)' : 'var(--text-3)' }}>{fmtDebitCredit(line.credit_amount)}</td>
                             </tr>
                           )
                         })}

@@ -17,15 +17,17 @@ describe('fmtDate', () => {
 })
 
 describe('fmtMoney', () => {
-  it('formats positive numbers with a dollar sign', () => {
+  it('formats positive numbers with a dollar sign and thousands separators', () => {
     expect(fmtMoney(100)).toBe('$100.00')
     expect(fmtMoney(0)).toBe('$0.00')
     expect(fmtMoney('42.5')).toBe('$42.50')
+    expect(fmtMoney(1234567.89)).toBe('$1,234,567.89')
   })
 
-  it('formats negative numbers with parentheses', () => {
-    expect(fmtMoney(-50)).toBe('$(50.00)')
-    expect(fmtMoney(-0.99)).toBe('$(0.99)')
+  it('formats negative numbers with accounting parentheses', () => {
+    expect(fmtMoney(-50)).toBe('($50.00)')
+    expect(fmtMoney(-0.99)).toBe('($0.99)')
+    expect(fmtMoney(-1234.5)).toBe('($1,234.50)')
   })
 })
 

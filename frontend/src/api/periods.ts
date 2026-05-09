@@ -1,4 +1,4 @@
-import { del, get, patch, post } from './client'
+import { del, get, post } from './client'
 import type {
   Period,
   PeriodCreate,

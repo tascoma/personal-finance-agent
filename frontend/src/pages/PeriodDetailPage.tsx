@@ -162,9 +162,9 @@ export default function PeriodDetailPage() {
     upload.mutate(fd)
   }
 
-  if (isLoading || !data) return <Layout><p style={{ color: 'var(--text-3)' }}>Loading…</p></Layout>
+  if (isLoading || !data) return <Layout><p className="color-text3">Loading…</p></Layout>
 
-  const { documents, accounts, balance_accounts, stated_balances, has_pending_documents, posted_doc_ids, unclassified_count, staged_count, approved_count, posted_count, transaction_count, next_status, prev_status } = data
+  const { documents, accounts, balance_accounts, has_pending_documents, posted_doc_ids, staged_count, approved_count, posted_count, transaction_count, next_status, prev_status } = data
 
   return (
     <Layout activePeriod={period}>
