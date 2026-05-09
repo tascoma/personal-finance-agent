@@ -1,20 +1,30 @@
 import os
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import settings
-from app.core.logging import configure_logging
+from app.core.logging import configure_logging, request_id_ctx
 from app.databases import init_db
 from app.routes import (
+    accounts as api_accounts,
+    auth as api_auth,
+    dashboard as api_dashboard,
+    documents as api_documents,
+    journal as api_journal,
+    ledger as api_ledger,
+    periods as api_periods,
+    reconciliation as api_reconciliation,
+    statements as api_statements,
     transactions as api_transactions,
 )
-from app.routes import accounts as api_accounts, auth as api_auth, dashboard as api_dashboard, documents as api_documents, journal as api_journal, ledger as api_ledger, periods as api_periods, reconciliation as api_reconciliation, statements as api_statements
 
 
 @asynccontextmanager
@@ -26,8 +36,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await _engine.dispose()
 
 
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+        token = request_id_ctx.set(rid)
+        try:
+            response = await call_next(request)
+        finally:
+            request_id_ctx.reset(token)
+        response.headers["x-request-id"] = rid
+        return response
+
+
 app = FastAPI(title="Personal Finance Agent", lifespan=lifespan)
 
+app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.allowed_origins.split(",") if o.strip()],
@@ -62,7 +85,7 @@ FRONTEND_DIST = str(Path(__file__).resolve().parents[2] / "frontend" / "dist")
 if os.path.isdir(FRONTEND_DIST):
     app.mount("/assets", StaticFiles(directory=f"{FRONTEND_DIST}/assets"), name="frontend-assets")
 
-    @app.get("/{full_path:path}", include_in_schema=False)
+    @app.get("/{full_path:path}", include_in_schema=False, response_model=None)
     async def spa_fallback(full_path: str) -> FileResponse | Response:
         if full_path.startswith("api/"):
             return Response(status_code=404)
