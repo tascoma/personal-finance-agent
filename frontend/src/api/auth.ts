@@ -4,9 +4,6 @@ import type { TokenResponse, UserRead } from '../types/auth'
 export const loginUser = (email: string, password: string): Promise<TokenResponse> =>
   post<TokenResponse>('/auth/login', { email, password })
 
-export const registerUser = (email: string, password: string): Promise<UserRead> =>
-  post<UserRead>('/auth/register', { email, password })
-
 export const refreshToken = (): Promise<TokenResponse> =>
   post<TokenResponse>('/auth/refresh')
 

@@ -5,6 +5,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.core.config import settings
 from app.databases import Base
 from app.dependencies import get_db_session
 from app.main import app
@@ -74,6 +75,14 @@ async def test_register_short_password_returns_422(client: AsyncClient):
         "/api/v1/auth/register", json={"email": "a@b.com", "password": "short"}
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_register_returns_404_when_disabled(client: AsyncClient, monkeypatch):
+    """Public registration must be closed by default for single-user deployments."""
+    monkeypatch.setattr(settings, "allow_registration", False)
+    resp = await client.post("/api/v1/auth/register", json=REGISTER_PAYLOAD)
+    assert resp.status_code == 404
 
 
 # ── Login ─────────────────────────────────────────────────────────────────────

@@ -12,7 +12,6 @@ import TransactionsPage from './pages/TransactionsPage'
 import JournalPage from './pages/JournalPage'
 import ReconcilePage from './pages/ReconcilePage'
 import LoginPage from './pages/LoginPage'
-import RegisterPage from './pages/RegisterPage'
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { token, isLoading } = useAuth()
@@ -26,7 +25,6 @@ export default function App() {
     <ErrorBoundary>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
         <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/accounts" element={<ProtectedRoute><AccountsPage /></ProtectedRoute>} />
         {/* /ledger/statements must come before /ledger to avoid prefix match */}

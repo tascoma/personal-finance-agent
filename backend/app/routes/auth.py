@@ -41,6 +41,10 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
 async def register(
     body: UserRegister, db: AsyncSession = Depends(get_db_session)
 ) -> UserRead:
+    # Single-user deployment: public registration is closed. The 404 mirrors what
+    # an unmounted route would return so the endpoint's existence isn't advertised.
+    if not settings.allow_registration:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     try:
         user = await register_user(db, email=body.email, password=body.password)
     except AuthError as exc:

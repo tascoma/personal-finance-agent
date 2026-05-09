@@ -20,6 +20,11 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # Single-user deployment: registration is disabled by default. Operator provisions
+    # the one account via `backend/scripts/create_user.py`. Set ALLOW_REGISTRATION=true
+    # only for local development or tests.
+    allow_registration: bool = False
+
     # Equity account used as the offset when posting opening-balance uploads.
     # Defaults to 300102 "Prior Period Net Worth" from the seed Chart of Accounts.
     opening_balance_equity_account_code: int = 300102

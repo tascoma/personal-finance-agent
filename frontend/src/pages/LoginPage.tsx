@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { loginUser } from '../api/auth'
 import { ApiError } from '../api/client'
@@ -57,7 +57,6 @@ export default function LoginPage() {
             {loading ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-        <p className="auth-footer">No account? <Link to="/register">Register</Link></p>
       </div>
     </div>
   )
