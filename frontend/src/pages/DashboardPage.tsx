@@ -16,18 +16,12 @@ import EmptyState from '../components/EmptyState'
 import StatusBadge from '../components/StatusBadge'
 import PeriodStepper from '../components/PeriodStepper'
 import SvgIcon from '../components/SvgIcon'
-import { fmtPeriod } from '../utils/format'
+import { fmtPeriod, fmtMoney } from '../utils/format'
 
 Chart.register(BarElement, LineElement, PointElement, BarController, LineController, CategoryScale, LinearScale, Tooltip, Legend)
 
 function kpiColor(val: string, positive: string, negative: string) {
   return parseFloat(val) >= 0 ? positive : negative
-}
-
-function fmtMoney(val: string) {
-  const n = parseFloat(val)
-  if (n < 0) return `($${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 
@@ -162,8 +156,8 @@ export default function DashboardPage() {
     return () => { chartRefs.current.forEach((c) => c.destroy()); chartRefs.current = [] }
   }, [data])
 
-  if (isLoading) return <Layout><p style={{ color: 'var(--text-3)' }}>Loading…</p></Layout>
-  if (error || !data) return <Layout><p style={{ color: 'var(--red)' }}>Failed to load dashboard.</p></Layout>
+  if (isLoading) return <Layout><p className="color-text3">Loading…</p></Layout>
+  if (error || !data) return <Layout><p className="color-red">Failed to load dashboard.</p></Layout>
 
   return (
     <Layout activePeriod={data.active_period}>
@@ -244,15 +238,15 @@ export default function DashboardPage() {
               <div className="kpi-sub">{scopeLabel}</div>
             </div>
             {(() => {
-              const salary = parseFloat(data.salary_income)
-              const inv = parseFloat(data.investing_cashflow)
-              const pct = salary !== 0 ? (Math.abs(inv) / salary) * 100 : 0
+              const comp = parseFloat(data.compensation_income)
+              const contrib = parseFloat(data.retirement_contributions)
+              const pct = comp !== 0 ? (contrib / comp) * 100 : 0
               const color = pct >= 0 ? 'var(--green)' : 'var(--red)'
               return (
                 <div className="kpi-card">
-                  <div className="kpi-label">Savings Rate</div>
+                  <div className="kpi-label">Retirement Savings Rate</div>
                   <div className="kpi-value" style={{ color, fontSize: 22 }}>{pct.toFixed(1)}%</div>
-                  <div className="kpi-sub">of salary income</div>
+                  <div className="kpi-sub">of salary + bonus</div>
                 </div>
               )
             })()}

@@ -55,6 +55,8 @@ class DashboardData:
     net_worth: Decimal
     investing_cashflow: Decimal
     salary_income: Decimal
+    retirement_contributions: Decimal
+    compensation_income: Decimal
     period_bars: list[PeriodBar]
     net_worth_series: list[NetWorthPoint]
     top_expense_categories: list[ExpenseCategory]
@@ -192,6 +194,24 @@ async def compute_dashboard(
         _ZERO,
     )
 
+    # Retirement contributions: only count changes from cash-touching entries so
+    # investment value adjustments (which post against Income/Equity, not cash) are excluded.
+    _retirement_codes = {111101, 111102, 111103}
+    retirement_contributions = _ZERO
+    for entry_lines in lines_operating_by_entry.values():
+        if not any(ln.account_code in cash_codes for ln in entry_lines):
+            continue
+        if any(accounts.get(ln.account_code) and accounts[ln.account_code].account_type == "Equity" for ln in entry_lines):
+            continue
+        for ln in entry_lines:
+            if ln.account_code in _retirement_codes:
+                retirement_contributions += ln.debit_amount - ln.credit_amount
+    _compensation_codes = {400101, 400102}
+    compensation_income = sum(
+        (ln.credit_amount - ln.debit_amount for ln in lines_operating if ln.account_code in _compensation_codes),
+        _ZERO,
+    )
+
     # Walk ALL closed periods in chronological order so the running balance-sheet
     # total is always correct. Only emit chart points for periods in the filter.
     period_bars: list[PeriodBar] = []
@@ -259,6 +279,8 @@ async def compute_dashboard(
         net_worth=net_worth,
         investing_cashflow=investing_cashflow,
         salary_income=salary_income,
+        retirement_contributions=retirement_contributions,
+        compensation_income=compensation_income,
         period_bars=period_bars,
         net_worth_series=net_worth_series,
         top_expense_categories=top_expense_categories,

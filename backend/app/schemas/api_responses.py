@@ -62,6 +62,8 @@ class DashboardResponse(BaseModel):
     net_worth: str
     investing_cashflow: str
     salary_income: str
+    retirement_contributions: str
+    compensation_income: str
     period_count: int
     has_data: bool
     period_bars: list[PeriodBarPoint]
