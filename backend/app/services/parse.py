@@ -10,7 +10,8 @@ import hashlib
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Sequence
@@ -290,33 +291,16 @@ async def _extract_transactions(
 # ── prepared-row helpers ────────────────────────────────────────────────────
 
 
+@dataclass(slots=True)
 class _PreparedTxn:
     """Internal carrier between extraction and persistence."""
 
-    __slots__ = (
-        "txn_date",
-        "description",
-        "amount",
-        "suggested_account_code",
-        "classifier_confidence",
-        "is_flagged",
-    )
-
-    def __init__(
-        self,
-        txn_date,
-        description: str,
-        amount: Decimal,
-        suggested_account_code: int | None,
-        classifier_confidence: Decimal,
-        is_flagged: bool,
-    ) -> None:
-        self.txn_date = txn_date
-        self.description = description
-        self.amount = amount
-        self.suggested_account_code = suggested_account_code
-        self.classifier_confidence = classifier_confidence
-        self.is_flagged = is_flagged
+    txn_date: date
+    description: str
+    amount: Decimal
+    suggested_account_code: int | None
+    classifier_confidence: Decimal
+    is_flagged: bool
 
 
 async def _prepare_statement_txns(
