@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: personal-finance-agent
+    env: docker
+    plan: starter
+    healthCheckPath: /health
+    preDeployCommand: cd backend && uv run alembic upgrade head
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: pfa-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-6
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO
+
+databases:
+  - name: pfa-db
+    plan: starter
+    postgresMajorVersion: "16"
