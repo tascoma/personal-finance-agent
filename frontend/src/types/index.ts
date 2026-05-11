@@ -231,18 +231,23 @@ export interface BalanceSheetPivotResponse {
   assets: BalanceSheetPivotSection[]
   liabilities: BalanceSheetPivotSection[]
   equity: BalanceSheetPivotSection[]
+  off_balance_sheet: BalanceSheetPivotSection[]
   total_assets: string[]
   total_liabilities: string[]
   total_equity: string[]
+  total_off_balance_sheet: string[]
 }
 
 export interface IncomeStatementResponse {
   range_label: string
   income: StatementSection[]
   expenses: StatementSection[]
+  other_comprehensive_income: StatementSection[]
   total_income: string
   total_expenses: string
+  total_oci: string
   net_income: string
+  comprehensive_income: string
 }
 
 export interface CashflowStatementResponse {

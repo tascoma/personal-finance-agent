@@ -49,9 +49,11 @@ async def get_balance_sheet_pivot(
         assets=[_convert_section(s) for s in pivot.assets],
         liabilities=[_convert_section(s) for s in pivot.liabilities],
         equity=[_convert_section(s) for s in pivot.equity],
+        off_balance_sheet=[_convert_section(s) for s in pivot.off_balance_sheet],
         total_assets=[str(v) for v in pivot.total_assets],
         total_liabilities=[str(v) for v in pivot.total_liabilities],
         total_equity=[str(v) for v in pivot.total_equity],
+        total_off_balance_sheet=[str(v) for v in pivot.total_off_balance_sheet],
     )
 
 
@@ -83,9 +85,12 @@ async def get_income_statement(
         range_label=stmt.range_label,
         income=[_section(s) for s in stmt.income],
         expenses=[_section(s) for s in stmt.expenses],
+        other_comprehensive_income=[_section(s) for s in stmt.other_comprehensive_income],
         total_income=str(stmt.total_income),
         total_expenses=str(stmt.total_expenses),
+        total_oci=str(stmt.total_oci),
         net_income=str(stmt.net_income),
+        comprehensive_income=str(stmt.comprehensive_income),
     )
 
 
