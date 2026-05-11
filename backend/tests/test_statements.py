@@ -14,8 +14,10 @@ from app.models.user import User
 from app.main import app
 from app.models.account import Account
 from app.models.document import Document
+from app.models.journal import JournalEntry, JournalLine
 from app.models.period import Period
 from app.models.raw_transaction import RawTransaction
+from app.models.stated_balance import StatedBalance
 from app.services import journal as journal_service
 from app.services import period as period_service
 from app.services import statements as statements_service
@@ -43,6 +45,12 @@ async def session_factory():
                     sub_category="Earned", normal_balance="credit", is_memo=False, is_active=True),
             Account(account_code=520101, account_name="Groceries", account_type="Expense",
                     sub_category="Food", normal_balance="debit", is_memo=False, is_active=True),
+            Account(account_code=410103, account_name="Unrealized Market Gain/Loss",
+                    account_type="Income", sub_category="Investment Income",
+                    normal_balance="credit", is_memo=False, is_active=True),
+            Account(account_code=112102, account_name="Fidelity – RSUs (Unvested)",
+                    account_type="Memo Asset*", sub_category="Equity Compensation (Off-BS)",
+                    normal_balance="debit", is_memo=True, is_active=True),
         ])
         await session.commit()
     yield factory
@@ -131,6 +139,82 @@ async def test_income_statement_net_income(session_factory):
     assert inc.total_income == Decimal("3000.00")
     assert inc.total_expenses == Decimal("150.00")
     assert inc.net_income == Decimal("2850.00")
+    # No unrealized G/L in this seed — OCI is empty.
+    assert inc.other_comprehensive_income == []
+    assert inc.total_oci == Decimal("0")
+    assert inc.comprehensive_income == Decimal("2850.00")
+
+
+@pytest.mark.asyncio
+async def test_income_statement_separates_oci(session_factory):
+    period = await _seed_period_with_entries(session_factory, 2026, 1)
+
+    # Post an unrealized G/L entry: debit Brokerage 500, credit Unrealized G/L 500.
+    async with session_factory() as session:
+        import uuid
+        eid = uuid.uuid4()
+        session.add(JournalEntry(
+            entry_id=eid, period_id=period.period_id, entry_date=date(2026, 1, 31),
+            description="Mark-to-market", source_type="adjusting",
+            source_document_id=None, created_by="python",
+        ))
+        session.add_all([
+            JournalLine(entry_id=eid, account_code=110101,
+                        debit_amount=Decimal("500.00"), credit_amount=Decimal("0")),
+            JournalLine(entry_id=eid, account_code=410103,
+                        debit_amount=Decimal("0"), credit_amount=Decimal("500.00")),
+        ])
+        await session.commit()
+
+    async with session_factory() as session:
+        inc = await statements_service.compute_income_statement(
+            session, [period.period_id], "January 2026"
+        )
+
+    # Net income excludes unrealized G/L; OCI captures it; comprehensive income sums them.
+    assert inc.total_income == Decimal("3000.00")
+    assert inc.net_income == Decimal("2850.00")
+    assert all(
+        line.account_code != 410103
+        for sec in inc.income for line in sec.lines
+    )
+    assert len(inc.other_comprehensive_income) == 1
+    oci_line = inc.other_comprehensive_income[0].lines[0]
+    assert oci_line.account_code == 410103
+    assert oci_line.amount == Decimal("500.00")
+    assert inc.total_oci == Decimal("500.00")
+    assert inc.comprehensive_income == Decimal("3350.00")
+
+
+@pytest.mark.asyncio
+async def test_balance_sheet_pivot_off_balance_sheet_section(session_factory):
+    p1 = await _seed_period_with_entries(session_factory, 2026, 1)
+    p2 = await _seed_period_with_entries(session_factory, 2026, 2)
+
+    async with session_factory() as session:
+        session.add_all([
+            StatedBalance(period_id=p1.period_id, account_code=112102,
+                          stated_balance=Decimal("16867.36")),
+            StatedBalance(period_id=p2.period_id, account_code=112102,
+                          stated_balance=Decimal("18114.65")),
+        ])
+        await session.commit()
+
+    async with session_factory() as session:
+        pivot = await statements_service.compute_balance_sheet_pivot(session)
+
+    assert len(pivot.periods) == 2
+    assert len(pivot.off_balance_sheet) == 1
+    sec = pivot.off_balance_sheet[0]
+    assert sec.label == "Equity Compensation (Off-BS)"
+    assert len(sec.rows) == 1
+    row = sec.rows[0]
+    assert row.account_code == 112102
+    # Point-in-time snapshots — period 2 value is its own stated balance, not cumulative.
+    assert row.balances == [Decimal("16867.36"), Decimal("18114.65")]
+    assert pivot.total_off_balance_sheet == [Decimal("16867.36"), Decimal("18114.65")]
+    # Memo amounts do not roll into Total Assets.
+    assert all(b not in (Decimal("16867.36"), Decimal("18114.65")) for b in pivot.total_assets)
 
 
 @pytest.mark.asyncio
@@ -197,6 +281,8 @@ async def test_balance_sheet_endpoint_renders_empty(client):
     assert "assets" in data
     assert "liabilities" in data
     assert "equity" in data
+    assert "off_balance_sheet" in data
+    assert "total_off_balance_sheet" in data
 
 
 @pytest.mark.asyncio
@@ -208,6 +294,9 @@ async def test_income_statement_endpoint_renders_with_data(client, session_facto
     assert data["total_income"] == "3000.00"
     assert data["total_expenses"] == "150.00"
     assert data["net_income"] == "2850.00"
+    assert data["other_comprehensive_income"] == []
+    assert data["total_oci"] == "0"
+    assert data["comprehensive_income"] == "2850.00"
 
 
 @pytest.mark.asyncio

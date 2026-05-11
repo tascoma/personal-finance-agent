@@ -148,18 +148,23 @@ class BalanceSheetPivotResponse(BaseModel):
     assets: list[BalanceSheetPivotSectionSchema]
     liabilities: list[BalanceSheetPivotSectionSchema]
     equity: list[BalanceSheetPivotSectionSchema]
+    off_balance_sheet: list[BalanceSheetPivotSectionSchema]
     total_assets: list[str]
     total_liabilities: list[str]
     total_equity: list[str]
+    total_off_balance_sheet: list[str]
 
 
 class IncomeStatementResponse(BaseModel):
     range_label: str
     income: list[StatementSectionSchema]
     expenses: list[StatementSectionSchema]
+    other_comprehensive_income: list[StatementSectionSchema]
     total_income: str
     total_expenses: str
+    total_oci: str
     net_income: str
+    comprehensive_income: str
 
 
 class CashflowStatementResponse(BaseModel):

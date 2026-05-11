@@ -1,8 +1,10 @@
 """Stated balance service — month-end closing balances per account.
 
 Stated balances are user-entered targets used during the Close phase to
-reconcile against the system-computed balance. Only Asset and Liability
-accounts carry a stated balance (memo accounts excluded).
+reconcile against the system-computed balance. Non-memo Asset/Liability
+accounts carry a stated balance for reconciliation; memo accounts (e.g.
+unvested RSUs) also carry a stated balance as a point-in-time snapshot
+for off-balance-sheet disclosure, but are excluded from reconciliation.
 """
 
 import logging
@@ -10,7 +12,7 @@ import uuid
 from decimal import Decimal
 from typing import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -68,12 +70,21 @@ async def list_balances(
 
 
 async def list_balance_accounts(db: AsyncSession) -> Sequence[Account]:
-    """Asset and Liability accounts that carry a month-end stated balance."""
+    """Accounts that carry a month-end stated balance.
+
+    Non-memo Asset/Liability accounts (for reconciliation) plus memo accounts
+    such as unvested RSUs (point-in-time snapshot for off-BS disclosure).
+    """
     result = await db.scalars(
         select(Account)
         .where(
-            Account.account_type.in_(("Asset", "Liability")),
-            Account.is_memo == False,  # noqa: E712 — SQL boolean, not Python truthiness
+            or_(
+                and_(
+                    Account.account_type.in_(("Asset", "Liability")),
+                    Account.is_memo == False,  # noqa: E712 — SQL boolean
+                ),
+                Account.is_memo == True,  # noqa: E712
+            ),
             Account.is_active == True,  # noqa: E712
         )
         .order_by(Account.account_code)
