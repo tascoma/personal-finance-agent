@@ -135,6 +135,12 @@ export interface ExpenseCategoryPoint {
   amount: string
 }
 
+export interface ExpenseCategorySeriesPoint {
+  period_label: string
+  category: string
+  amount: string
+}
+
 export interface RecentEntryPoint {
   description: string
   entry_date: string
@@ -154,11 +160,13 @@ export interface DashboardResponse {
   salary_income: string
   retirement_contributions: string
   compensation_income: string
+  lifestyle_expenses: string
   period_count: number
   has_data: boolean
   period_bars: PeriodBarPoint[]
   net_worth_series: NetWorthPoint[]
   top_expense_categories: ExpenseCategoryPoint[]
+  expense_category_series: ExpenseCategorySeriesPoint[]
   recent_entries: RecentEntryPoint[]
   active_period: Period | null
 }

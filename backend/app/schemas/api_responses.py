@@ -45,6 +45,12 @@ class ExpenseCategoryPoint(BaseModel):
     amount: str
 
 
+class ExpenseCategorySeriesPoint(BaseModel):
+    period_label: str
+    category: str
+    amount: str
+
+
 class RecentEntryPoint(BaseModel):
     description: str
     entry_date: str
@@ -64,11 +70,13 @@ class DashboardResponse(BaseModel):
     salary_income: str
     retirement_contributions: str
     compensation_income: str
+    lifestyle_expenses: str
     period_count: int
     has_data: bool
     period_bars: list[PeriodBarPoint]
     net_worth_series: list[NetWorthPoint]
     top_expense_categories: list[ExpenseCategoryPoint]
+    expense_category_series: list[ExpenseCategorySeriesPoint]
     recent_entries: list[RecentEntryPoint]
     active_period: Optional[PeriodRead]
 
