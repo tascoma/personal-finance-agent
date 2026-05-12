@@ -98,6 +98,7 @@ export default function PeriodsListPage() {
         )}
 
         {periods.length > 0 && (
+          <div className="table-scroll">
           <table className="data-table">
             <thead>
               <tr>
@@ -128,6 +129,7 @@ export default function PeriodsListPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </Layout>

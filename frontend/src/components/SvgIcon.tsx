@@ -21,6 +21,7 @@ const PATHS: Record<string, string> = {
   'chevron-right': 'M9 18l6-6-6-6',
   x: 'M18 6 6 18M6 6l12 12',
   trash: 'M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6',
+  menu: 'M4 6h16M4 12h16M4 18h16',
 }
 
 interface Props {

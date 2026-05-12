@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import Sidebar from './Sidebar'
+import AppHeader from './AppHeader'
 import type { Period } from '../types'
 
 interface Props {
@@ -10,7 +11,8 @@ interface Props {
 export default function Layout({ children, activePeriod }: Props) {
   return (
     <>
-      <Sidebar activePeriod={activePeriod} />
+      <AppHeader activePeriod={activePeriod} />
+      <Sidebar />
       <main className="main">{children}</main>
     </>
   )

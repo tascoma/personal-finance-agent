@@ -263,6 +263,7 @@ export default function JournalPage() {
             {staged.length === 0 ? (
               <EmptyState icon="check" message="No staged transactions." hint="All transactions have been approved, rejected, or posted." />
             ) : (
+              <div className="table-scroll">
               <table className="data-table">
                 <thead>
                   <tr>
@@ -320,6 +321,7 @@ export default function JournalPage() {
                   })}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </>
@@ -344,6 +346,7 @@ export default function JournalPage() {
           {approved.length === 0 ? (
             <EmptyState icon="journal" message="Nothing approved yet." hint="Approve staged transactions, then post them to the ledger." />
           ) : (
+            <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr><th>Date</th><th>Description</th><th className="text-right">Amount</th><th>Account</th><th>Confidence</th>{canEdit && <th />}</tr>
@@ -373,6 +376,7 @@ export default function JournalPage() {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}
@@ -410,6 +414,7 @@ export default function JournalPage() {
                         )}
                       </div>
                     </div>
+                    <div className="table-scroll">
                     <table className="data-table" style={{ tableLayout: 'fixed' }}>
                       <thead>
                         <tr><th>Account</th><th>Memo</th><th className="text-right" style={{ width: 130 }}>Debit</th><th className="text-right" style={{ width: 130 }}>Credit</th></tr>
@@ -435,6 +440,7 @@ export default function JournalPage() {
                         </tr>
                       </tfoot>
                     </table>
+                    </div>
                   </div>
                 )
               })}
@@ -469,6 +475,7 @@ export default function JournalPage() {
                   </div>
                 </div>
 
+                <div className="table-scroll">
                 <table className="data-table" style={{ marginBottom: 8 }}>
                   <thead>
                     <tr><th>Account</th><th style={{ width: 110 }}>Debit ($)</th><th style={{ width: 110 }}>Credit ($)</th><th style={{ width: 200 }}>Memo</th><th style={{ width: 36 }} /></tr>
@@ -494,6 +501,7 @@ export default function JournalPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                   <button className="btn btn-ghost btn-sm" onClick={() => setLines((ls) => [...ls, { acct: '', debit: '', credit: '', memo: '' }])}>

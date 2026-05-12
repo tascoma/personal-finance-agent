@@ -25,6 +25,7 @@ function SectionTable({ sections, totalLabel, totalAmount }: {
     return <div className="empty-state"><p className="empty-msg">No activity for this section.</p></div>
   }
   return (
+    <div className="table-scroll">
     <table className="data-table">
       <tbody>
         {sections.map((sec) => (
@@ -63,6 +64,7 @@ function SectionTable({ sections, totalLabel, totalAmount }: {
         </tr>
       </tfoot>
     </table>
+    </div>
   )
 }
 

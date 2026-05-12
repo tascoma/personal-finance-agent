@@ -52,6 +52,7 @@ export default function TransactionsPage() {
           {transactions.length === 0 ? (
             <EmptyState icon="file" message="No transactions yet." hint="Parse a document on the period page to stage transactions here." />
           ) : (
+            <div className="table-scroll">
             <table className="data-table">
               <thead>
                 <tr>
@@ -91,6 +92,7 @@ export default function TransactionsPage() {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}
