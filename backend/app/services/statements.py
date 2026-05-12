@@ -25,6 +25,25 @@ _ZERO = Decimal("0")
 # Income accounts presented below Net Income as Other Comprehensive Income.
 OCI_ACCOUNT_CODES: frozenset[int] = frozenset({410103})
 
+# Explicit display order for Asset sub-categories on the balance sheet.
+# Anything not listed sorts alphabetically after these.
+ASSET_SECTION_ORDER: tuple[str, ...] = (
+    "Cash & Cash Equivalents",
+    "Restricted Cash",
+    "Investments",
+    "Retirement & Tax-Advantaged Accounts",
+    "Real Estate",
+)
+
+
+def _section_sort_key(account_type: str, label: str) -> tuple:
+    if account_type == "Asset":
+        try:
+            return (0, ASSET_SECTION_ORDER.index(label), "")
+        except ValueError:
+            return (1, 0, label)
+    return (0, 0, label)
+
 
 # ── public dataclasses ──────────────────────────────────────────────────────
 
@@ -196,7 +215,7 @@ def _group_by_subcategory(
         )
         section.subtotal += balance
 
-    sections = sorted(by_sub.values(), key=lambda s: s.label)
+    sections = sorted(by_sub.values(), key=lambda s: _section_sort_key(account_type, s.label))
     for s in sections:
         s.lines.sort(key=lambda ln: ln.account_code)
     grand_total = sum((s.subtotal for s in sections), _ZERO)
@@ -376,7 +395,7 @@ async def compute_balance_sheet_pivot(db: AsyncSession) -> BalanceSheetPivot:
         grand_totals: list[Decimal] = [_ZERO] * n
         sections: list[BalanceSheetPivotSection] = []
 
-        for sub_label in sorted(by_sub.keys()):
+        for sub_label in sorted(by_sub.keys(), key=lambda l: _section_sort_key(account_type, l)):
             rows: list[BalanceSheetPivotRow] = []
             sub_totals: list[Decimal] = [_ZERO] * n
 

@@ -123,7 +123,7 @@ export default function DashboardPage() {
           ],
         },
         options: {
-          responsive: true, maintainAspectRatio: true,
+          responsive: true, maintainAspectRatio: false,
           plugins: { legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } }, tooltip: { callbacks: { label: moneyTip } } },
           scales: { x: { grid: { display: false } }, y: { ticks: { callback: moneyTick } } },
         },
@@ -142,7 +142,7 @@ export default function DashboardPage() {
           datasets: [{ label: 'Net Worth', data: data.net_worth_series.map((d) => parseFloat(d.net_worth)), borderColor: accent, backgroundColor: gradient, borderWidth: 2, pointBackgroundColor: accent, pointRadius: 4, fill: true, tension: 0.35 }],
         },
         options: {
-          responsive: true, maintainAspectRatio: true,
+          responsive: true, maintainAspectRatio: false,
           plugins: { legend: { display: false }, tooltip: { callbacks: { label: moneyTip } } },
           scales: { x: { grid: { display: false } }, y: { ticks: { callback: moneyTick } } },
         },
@@ -325,6 +325,7 @@ export default function DashboardPage() {
 
   return (
     <Layout activePeriod={data.active_period}>
+      <div className="dashboard-page">
       <PageHeader
         title="Dashboard"
         subtitle={`Financial overview · ${data.period_count} period${data.period_count !== 1 ? 's' : ''} tracked`}
@@ -337,10 +338,10 @@ export default function DashboardPage() {
       />
 
       {availableYears.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           <select
-            className="inp"
-            style={{ width: 130 }}
+            className="inp inp-fit"
+            style={{ minWidth: 130 }}
             value={selectedYear ?? ''}
             onChange={(e) => handleYearChange(e.target.value ? parseInt(e.target.value, 10) : null)}
           >
@@ -348,8 +349,8 @@ export default function DashboardPage() {
             {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
           <select
-            className="inp"
-            style={{ width: 160 }}
+            className="inp inp-fit"
+            style={{ minWidth: 160 }}
             value={selectedPeriodId ?? ''}
             disabled={selectedYear == null}
             onChange={(e) => setSelectedPeriodId(e.target.value || null)}
@@ -431,13 +432,13 @@ export default function DashboardPage() {
             <div className="card">
               <div className="card-hd"><div><div className="card-title">Income vs Expenses</div><div className="card-sub">by period</div></div></div>
               <div className="card-bd" style={{ padding: '16px 20px' }}>
-                {data.period_bars.length ? <canvas ref={ieRef} height={180} /> : <EmptyState message="No data yet." hint="Post journal entries to see charts." />}
+                {data.period_bars.length ? <div style={{ height: 180 }}><canvas ref={ieRef} /></div> : <EmptyState message="No data yet." hint="Post journal entries to see charts." />}
               </div>
             </div>
             <div className="card">
               <div className="card-hd"><div><div className="card-title">Net Worth Trend</div><div className="card-sub">cumulative, per period</div></div></div>
               <div className="card-bd" style={{ padding: '16px 20px' }}>
-                {data.net_worth_series.length ? <canvas ref={nwRef} height={180} /> : <EmptyState message="No data yet." />}
+                {data.net_worth_series.length ? <div style={{ height: 180 }}><canvas ref={nwRef} /></div> : <EmptyState message="No data yet." />}
               </div>
             </div>
           </div>
@@ -446,7 +447,7 @@ export default function DashboardPage() {
             <div className="card">
               <div className="card-hd"><div><div className="card-title">Expenses by Category</div><div className="card-sub">all time · top 8</div></div></div>
               <div className="card-bd" style={{ padding: '16px 20px' }}>
-                {data.top_expense_categories.length ? <canvas ref={ecRef} height={260} /> : <EmptyState message="No expenses yet." />}
+                {data.top_expense_categories.length ? <canvas ref={ecRef} height={200} /> : <EmptyState message="No expenses yet." />}
               </div>
             </div>
             <div className="card">
@@ -455,6 +456,7 @@ export default function DashboardPage() {
                 <Link to="/ledger" className="btn btn-ghost btn-sm">View all →</Link>
               </div>
               {data.recent_entries.length ? (
+                <div className="table-scroll">
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -477,6 +479,7 @@ export default function DashboardPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               ) : (
                 <EmptyState icon="journal" message="No entries posted yet." hint="Complete a period workflow to post entries." />
               )}
@@ -661,7 +664,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="card-bd" style={{ padding: '16px 20px' }}>
                       {data.expense_category_series.length
-                        ? <div style={{ height: 260 }}><canvas ref={stackRef} /></div>
+                        ? <div style={{ height: 200 }}><canvas ref={stackRef} /></div>
                         : <EmptyState message="No expenses yet." hint="Close a period to see category trends." />}
                     </div>
                   </div>
@@ -669,7 +672,7 @@ export default function DashboardPage() {
                     <div className="card-hd"><div><div className="card-title">Expense Mix</div><div className="card-sub">top 8 · {scopeLabel}</div></div></div>
                     <div className="card-bd" style={{ padding: '16px 20px' }}>
                       {data.top_expense_categories.length
-                        ? <div style={{ height: 260 }}><canvas ref={donutRef} /></div>
+                        ? <div style={{ height: 200 }}><canvas ref={donutRef} /></div>
                         : <EmptyState message="No expenses yet." />}
                     </div>
                   </div>
@@ -679,7 +682,7 @@ export default function DashboardPage() {
                   <div className="card-hd"><div><div className="card-title">Category Spend vs Compensation</div><div className="card-sub">each sub-category as % of salary + bonus · top 8</div></div></div>
                   <div className="card-bd" style={{ padding: '16px 20px' }}>
                     {data.top_expense_categories.length && parseFloat(data.compensation_income) > 0
-                      ? <div style={{ height: 220 }}><canvas ref={compRef} /></div>
+                      ? <div style={{ height: 170 }}><canvas ref={compRef} /></div>
                       : <EmptyState message="No data yet." hint="Needs both expenses and compensation income." />}
                   </div>
                 </div>
@@ -689,6 +692,7 @@ export default function DashboardPage() {
           })()}
         </>
       )}
+      </div>
     </Layout>
   )
 }

@@ -86,6 +86,7 @@ export default function LedgerPage() {
                           <span className="badge badge--parsed">{entry.source_type}</span>
                         </div>
                         {entry.lines.length > 0 && (
+                          <div className="table-scroll">
                           <table className="data-table" style={{ tableLayout: 'fixed' }}>
                             <thead>
                               <tr>
@@ -122,6 +123,7 @@ export default function LedgerPage() {
                               </tr>
                             </tfoot>
                           </table>
+                          </div>
                         )}
                       </div>
                     )
