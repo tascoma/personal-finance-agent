@@ -60,6 +60,7 @@ export default function AccountsPage() {
                   <div className="card-title">{TYPE_LABELS[t]}</div>
                   <span className="color-text3" style={{ fontSize: 12 }}>{accts.length} accounts</span>
                 </div>
+                <div className="table-scroll">
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -80,6 +81,7 @@ export default function AccountsPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
             )
           })}

@@ -18,6 +18,16 @@ A personal double-entry accounting system with an AI-powered document and transa
 - **React 18** + **TypeScript** — component-based SPA
 - **Vite** — dev server and build tool
 
+## Platforms
+
+External services this app depends on:
+
+- **GitHub** — source repository; pushes to `main` trigger Render auto-deploy
+- **Render** — runs the Dockerized web service in the `oregon` region; builds on every commit to `main`
+- **Supabase** — managed PostgreSQL accessed via `asyncpg`; schema managed by Alembic (not Supabase's UI). The connection string lives in `DATABASE_URL`
+- **Anthropic (Claude)** — LLM backing the Pydantic-AI agents under `app/agents/`; requires `ANTHROPIC_API_KEY`
+- **PyPI** (via `uv`), **npm registry**, and **Docker Hub / GHCR** — package and base-image sources used at build time
+
 ## Features
 
 - **Authentication** — JWT-based user registration, login, token refresh, and logout; access tokens via Bearer header, refresh tokens via HttpOnly cookie

@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Chart,
-  BarElement, LineElement, PointElement,
-  BarController, LineController,
+  BarElement, LineElement, PointElement, ArcElement,
+  BarController, LineController, DoughnutController,
   CategoryScale, LinearScale,
-  Tooltip, Legend,
+  Tooltip, Legend, Filler,
+  type Plugin,
 } from 'chart.js'
 import { fetchDashboard } from '../api/dashboard'
 import { fetchPeriods } from '../api/periods'
@@ -16,18 +17,25 @@ import EmptyState from '../components/EmptyState'
 import StatusBadge from '../components/StatusBadge'
 import PeriodStepper from '../components/PeriodStepper'
 import SvgIcon from '../components/SvgIcon'
+import Tabs from '../components/Tabs'
 import { fmtPeriod, fmtMoney } from '../utils/format'
 
-Chart.register(BarElement, LineElement, PointElement, BarController, LineController, CategoryScale, LinearScale, Tooltip, Legend)
+Chart.register(BarElement, LineElement, PointElement, ArcElement, BarController, LineController, DoughnutController, CategoryScale, LinearScale, Tooltip, Legend, Filler)
 
 function kpiColor(val: string, positive: string, negative: string) {
   return parseFloat(val) >= 0 ? positive : negative
 }
 
 
+type DashboardTab = 'overview' | 'insights'
+
 export default function DashboardPage() {
   const [selectedYear, setSelectedYear] = useState<number | null>(null)
   const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<DashboardTab>('overview')
+  const [trendScale, setTrendScale] = useState<'all' | 'under1k'>('all')
+  const [showLifestyleTip, setShowLifestyleTip] = useState(false)
+  const [showDeltaTip, setShowDeltaTip] = useState(false)
 
   const { data: allPeriods } = useQuery({
     queryKey: ['periods'],
@@ -73,7 +81,11 @@ export default function DashboardPage() {
   const ieRef = useRef<HTMLCanvasElement>(null)
   const nwRef = useRef<HTMLCanvasElement>(null)
   const ecRef = useRef<HTMLCanvasElement>(null)
+  const stackRef = useRef<HTMLCanvasElement>(null)
+  const donutRef = useRef<HTMLCanvasElement>(null)
+  const compRef = useRef<HTMLCanvasElement>(null)
   const chartRefs = useRef<Chart[]>([])
+  const trendChartRef = useRef<Chart | null>(null)
 
   useEffect(() => {
     if (!data) return
@@ -111,7 +123,7 @@ export default function DashboardPage() {
           ],
         },
         options: {
-          responsive: true, maintainAspectRatio: true,
+          responsive: true, maintainAspectRatio: false,
           plugins: { legend: { position: 'top', labels: { boxWidth: 12, padding: 16 } }, tooltip: { callbacks: { label: moneyTip } } },
           scales: { x: { grid: { display: false } }, y: { ticks: { callback: moneyTick } } },
         },
@@ -130,15 +142,16 @@ export default function DashboardPage() {
           datasets: [{ label: 'Net Worth', data: data.net_worth_series.map((d) => parseFloat(d.net_worth)), borderColor: accent, backgroundColor: gradient, borderWidth: 2, pointBackgroundColor: accent, pointRadius: 4, fill: true, tension: 0.35 }],
         },
         options: {
-          responsive: true, maintainAspectRatio: true,
+          responsive: true, maintainAspectRatio: false,
           plugins: { legend: { display: false }, tooltip: { callbacks: { label: moneyTip } } },
           scales: { x: { grid: { display: false } }, y: { ticks: { callback: moneyTick } } },
         },
       }))
     }
 
+    const catColors = [red, amber, accent, green, '#a78bfa', '#38bdf8', '#fb923c', '#34d399']
+
     if (ecRef.current && data.top_expense_categories.length) {
-      const catColors = [red, amber, accent, green, '#a78bfa', '#38bdf8', '#fb923c', '#34d399']
       chartRefs.current.push(new Chart(ecRef.current, {
         type: 'bar',
         data: {
@@ -153,14 +166,166 @@ export default function DashboardPage() {
       }))
     }
 
+    if (donutRef.current && data.top_expense_categories.length) {
+      const totalExpenses = parseFloat(data.total_expenses)
+      const arcPctLabels: Plugin<'doughnut'> = {
+        id: 'arcPctLabels',
+        afterDatasetsDraw(chart) {
+          const ctx = chart.ctx
+          const meta = chart.getDatasetMeta(0)
+          const values = chart.data.datasets[0].data as number[]
+          meta.data.forEach((arc, i) => {
+            const pct = totalExpenses > 0 ? (values[i] / totalExpenses) * 100 : 0
+            if (pct < 4) return
+            const pos = (arc as unknown as { tooltipPosition: (f: boolean) => { x: number; y: number } }).tooltipPosition(true)
+            ctx.save()
+            ctx.fillStyle = '#fff'
+            ctx.font = 'bold 11px DM Sans, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillText(`${pct.toFixed(0)}%`, pos.x, pos.y)
+            ctx.restore()
+          })
+        },
+      }
+      chartRefs.current.push(new Chart<'doughnut'>(donutRef.current, {
+        type: 'doughnut',
+        data: {
+          labels: data.top_expense_categories.map((d) => d.category),
+          datasets: [{
+            data: data.top_expense_categories.map((d) => parseFloat(d.amount)),
+            backgroundColor: data.top_expense_categories.map((_, i) => catColors[i % catColors.length] + 'cc'),
+            borderColor: data.top_expense_categories.map((_, i) => catColors[i % catColors.length]),
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '60%',
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } },
+            tooltip: { callbacks: { label: (ctx) => {
+              const amt = Number(ctx.parsed ?? 0)
+              const pct = totalExpenses > 0 ? (amt / totalExpenses) * 100 : 0
+              return ` ${ctx.label}: $${amt.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${pct.toFixed(1)}%)`
+            } } },
+          },
+        },
+        plugins: [arcPctLabels],
+      }))
+    }
+
+    if (compRef.current && data.top_expense_categories.length) {
+      const comp = parseFloat(data.compensation_income)
+      const pcts = data.top_expense_categories.map((d) => comp > 0 ? (parseFloat(d.amount) / comp) * 100 : 0)
+      const barPctLabels: Plugin<'bar'> = {
+        id: 'barPctLabels',
+        afterDatasetsDraw(chart) {
+          const ctx = chart.ctx
+          const meta = chart.getDatasetMeta(0)
+          meta.data.forEach((bar, i) => {
+            const pct = pcts[i]
+            if (pct <= 0) return
+            const { x, y } = bar as unknown as { x: number; y: number }
+            ctx.save()
+            ctx.fillStyle = text3
+            ctx.font = 'bold 11px DM Sans, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'bottom'
+            ctx.fillText(`${pct.toFixed(1)}%`, x, y - 4)
+            ctx.restore()
+          })
+        },
+      }
+      chartRefs.current.push(new Chart<'bar'>(compRef.current, {
+        type: 'bar',
+        data: {
+          labels: data.top_expense_categories.map((d) => d.category),
+          datasets: [{
+            label: '% of salary + bonus',
+            data: pcts,
+            backgroundColor: data.top_expense_categories.map((_, i) => catColors[i % catColors.length] + 'bb'),
+            borderColor: data.top_expense_categories.map((_, i) => catColors[i % catColors.length]),
+            borderWidth: 1,
+            borderRadius: 4,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: (ctx) => {
+              const idx = ctx.dataIndex
+              const amt = parseFloat(data.top_expense_categories[idx].amount)
+              return ` ${(ctx.parsed.y ?? 0).toFixed(1)}% · $${amt.toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+            } } },
+          },
+          scales: {
+            x: { grid: { display: false } },
+            y: { ticks: { callback: (v) => `${Number(v).toFixed(0)}%` }, grace: '10%' },
+          },
+        },
+        plugins: [barPctLabels],
+      }))
+    }
+
     return () => { chartRefs.current.forEach((c) => c.destroy()); chartRefs.current = [] }
-  }, [data])
+  }, [data, activeTab])
+
+  useEffect(() => {
+    if (!data || activeTab !== 'insights') return
+    if (!stackRef.current || !data.expense_category_series.length) return
+
+    trendChartRef.current?.destroy()
+
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light'
+    const red    = isDark ? '#f87171' : '#dc2626'
+    const accent = isDark ? '#56c8f0' : '#0284c7'
+    const green  = isDark ? '#4ade80' : '#16a34a'
+    const amber  = isDark ? '#fbbf24' : '#b45309'
+    const catColors = [red, amber, accent, green, '#a78bfa', '#38bdf8', '#fb923c', '#34d399']
+    const moneyTick = (v: number | string) => `$${Number(v).toLocaleString()}`
+
+    const periodLabels = [...new Set(data.expense_category_series.map((p) => p.period_label))]
+    const allCategories = [...new Set(data.expense_category_series.map((p) => p.category))]
+    const seriesByKey = new Map<string, number>()
+    for (const row of data.expense_category_series) {
+      seriesByKey.set(`${row.period_label}|${row.category}`, parseFloat(row.amount))
+    }
+    const categories = trendScale === 'under1k'
+      ? allCategories.filter((cat) => Math.max(...periodLabels.map((pl) => seriesByKey.get(`${pl}|${cat}`) ?? 0)) < 1000)
+      : allCategories
+    const datasets = categories.map((cat) => {
+      const color = catColors[allCategories.indexOf(cat) % catColors.length]
+      return {
+        label: cat,
+        data: periodLabels.map((pl) => seriesByKey.get(`${pl}|${cat}`) ?? 0),
+        borderColor: color,
+        backgroundColor: color,
+        borderWidth: 1.5,
+        pointRadius: 2,
+        fill: false,
+        tension: 0.3,
+      }
+    })
+    trendChartRef.current = new Chart(stackRef.current, {
+      type: 'line',
+      data: { labels: periodLabels, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } }, tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: $${(ctx.parsed.y ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}` } } },
+        scales: { x: { grid: { display: false } }, y: { ticks: { callback: moneyTick } } },
+      },
+    })
+
+    return () => { trendChartRef.current?.destroy(); trendChartRef.current = null }
+  }, [data, activeTab, trendScale])
 
   if (isLoading) return <Layout><p className="color-text3">Loading…</p></Layout>
   if (error || !data) return <Layout><p className="color-red">Failed to load dashboard.</p></Layout>
 
   return (
     <Layout activePeriod={data.active_period}>
+      <div className="dashboard-page">
       <PageHeader
         title="Dashboard"
         subtitle={`Financial overview · ${data.period_count} period${data.period_count !== 1 ? 's' : ''} tracked`}
@@ -173,10 +338,10 @@ export default function DashboardPage() {
       />
 
       {availableYears.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
           <select
-            className="inp"
-            style={{ width: 130 }}
+            className="inp inp-fit"
+            style={{ minWidth: 130 }}
             value={selectedYear ?? ''}
             onChange={(e) => handleYearChange(e.target.value ? parseInt(e.target.value, 10) : null)}
           >
@@ -184,8 +349,8 @@ export default function DashboardPage() {
             {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
           <select
-            className="inp"
-            style={{ width: 160 }}
+            className="inp inp-fit"
+            style={{ minWidth: 160 }}
             value={selectedPeriodId ?? ''}
             disabled={selectedYear == null}
             onChange={(e) => setSelectedPeriodId(e.target.value || null)}
@@ -211,6 +376,17 @@ export default function DashboardPage() {
         </div>
       ) : (
         <>
+          <Tabs
+            tabs={[
+              { key: 'overview', label: 'Overview' },
+              { key: 'insights', label: 'Expense Insights' },
+            ]}
+            active={activeTab}
+            onChange={(k) => setActiveTab(k as DashboardTab)}
+          />
+
+          {activeTab === 'overview' && (
+          <>
           <div className="kpi-grid kpi-grid-6">
             <div className="kpi-card">
               <div className="kpi-label">Total Income</div>
@@ -256,13 +432,13 @@ export default function DashboardPage() {
             <div className="card">
               <div className="card-hd"><div><div className="card-title">Income vs Expenses</div><div className="card-sub">by period</div></div></div>
               <div className="card-bd" style={{ padding: '16px 20px' }}>
-                {data.period_bars.length ? <canvas ref={ieRef} height={180} /> : <EmptyState message="No data yet." hint="Post journal entries to see charts." />}
+                {data.period_bars.length ? <div style={{ height: 180 }}><canvas ref={ieRef} /></div> : <EmptyState message="No data yet." hint="Post journal entries to see charts." />}
               </div>
             </div>
             <div className="card">
               <div className="card-hd"><div><div className="card-title">Net Worth Trend</div><div className="card-sub">cumulative, per period</div></div></div>
               <div className="card-bd" style={{ padding: '16px 20px' }}>
-                {data.net_worth_series.length ? <canvas ref={nwRef} height={180} /> : <EmptyState message="No data yet." />}
+                {data.net_worth_series.length ? <div style={{ height: 180 }}><canvas ref={nwRef} /></div> : <EmptyState message="No data yet." />}
               </div>
             </div>
           </div>
@@ -271,7 +447,7 @@ export default function DashboardPage() {
             <div className="card">
               <div className="card-hd"><div><div className="card-title">Expenses by Category</div><div className="card-sub">all time · top 8</div></div></div>
               <div className="card-bd" style={{ padding: '16px 20px' }}>
-                {data.top_expense_categories.length ? <canvas ref={ecRef} height={260} /> : <EmptyState message="No expenses yet." />}
+                {data.top_expense_categories.length ? <canvas ref={ecRef} height={200} /> : <EmptyState message="No expenses yet." />}
               </div>
             </div>
             <div className="card">
@@ -280,6 +456,7 @@ export default function DashboardPage() {
                 <Link to="/ledger" className="btn btn-ghost btn-sm">View all →</Link>
               </div>
               {data.recent_entries.length ? (
+                <div className="table-scroll">
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -302,6 +479,7 @@ export default function DashboardPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
               ) : (
                 <EmptyState icon="journal" message="No entries posted yet." hint="Complete a period workflow to post entries." />
               )}
@@ -326,8 +504,195 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
+          </>
+          )}
+
+          {activeTab === 'insights' && (() => {
+            const comp = parseFloat(data.compensation_income)
+            const lifestyle = parseFloat(data.lifestyle_expenses)
+            const lifestylePct = comp !== 0 ? (lifestyle / comp) * 100 : 0
+            const lifestyleColor = lifestylePct > 30 ? 'var(--red)' : lifestylePct > 20 ? 'var(--amber, #b45309)' : 'var(--green)'
+
+            const totalExp = parseFloat(data.total_expenses)
+            const totalInc = parseFloat(data.total_income)
+            const avgExpPerPeriod = data.period_count > 0 ? totalExp / data.period_count : 0
+            const expToIncomePct = totalInc > 0 ? (totalExp / totalInc) * 100 : 0
+            const topCat = data.top_expense_categories[0]
+            const topCatPct = totalExp > 0 && topCat ? (parseFloat(topCat.amount) / totalExp) * 100 : 0
+
+            const bars = data.period_bars
+            const lastBar = bars[bars.length - 1]
+            const prevBar = bars[bars.length - 2]
+            const periodDeltaPct = prevBar && lastBar && prevBar.expenses
+              ? ((parseFloat(lastBar.expenses) - parseFloat(prevBar.expenses)) / parseFloat(prevBar.expenses)) * 100
+              : null
+            const deltaColor = periodDeltaPct == null ? 'var(--text2)' : periodDeltaPct > 0 ? 'var(--red)' : 'var(--green)'
+
+            return (
+              <>
+                <div className="kpi-grid kpi-grid-6">
+                  <div
+                    className="kpi-card"
+                    style={{ cursor: 'help', position: 'relative' }}
+                    onMouseEnter={() => setShowLifestyleTip(true)}
+                    onMouseLeave={() => setShowLifestyleTip(false)}
+                  >
+                    <div className="kpi-label">Lifestyle Spending Rate <span style={{ opacity: 0.5 }}>ⓘ</span></div>
+                    <div className="kpi-value" style={{ color: lifestyleColor, fontSize: 22 }}>{lifestylePct.toFixed(1)}%</div>
+                    <div className="kpi-sub">of salary + bonus</div>
+                    {showLifestyleTip && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: 'calc(100% + 8px)',
+                          left: 0,
+                          zIndex: 50,
+                          minWidth: 240,
+                          padding: '10px 12px',
+                          background: 'var(--bg2, #1a2733)',
+                          color: 'var(--text1, #e6f1f8)',
+                          border: '1px solid var(--border, rgba(86,200,240,0.15))',
+                          borderRadius: 6,
+                          fontSize: 12,
+                          lineHeight: 1.5,
+                          boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>Lifestyle (numerator)</div>
+                        <div style={{ opacity: 0.85 }}>Travel · Entertainment · Hobbies & Recreation · Electronics & Technology · Dining Out · Alcohol</div>
+                        <div style={{ fontWeight: 600, marginTop: 8, marginBottom: 2 }}>÷ Salary + Bonus (denominator)</div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">Lifestyle Spending</div>
+                    <div className="kpi-value" style={{ color: 'var(--red)', fontSize: 22 }}>{fmtMoney(data.lifestyle_expenses)}</div>
+                    <div className="kpi-sub">{scopeLabel}</div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">Avg Expenses / Period</div>
+                    <div className="kpi-value" style={{ color: 'var(--red)', fontSize: 22 }}>{fmtMoney(String(avgExpPerPeriod))}</div>
+                    <div className="kpi-sub">{data.period_count} closed period{data.period_count !== 1 ? 's' : ''}</div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">Expense / Income</div>
+                    <div className="kpi-value" style={{ color: expToIncomePct > 100 ? 'var(--red)' : expToIncomePct > 80 ? 'var(--amber, #b45309)' : 'var(--green)', fontSize: 22 }}>{expToIncomePct.toFixed(1)}%</div>
+                    <div className="kpi-sub">spent vs earned</div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">Top Category</div>
+                    <div className="kpi-value" style={{ color: 'var(--accent)', fontSize: 16, lineHeight: 1.2 }} title={topCat?.category ?? ''}>
+                      {topCat ? topCat.category : '—'}
+                    </div>
+                    <div className="kpi-sub">{topCat ? `${fmtMoney(topCat.amount)} · ${topCatPct.toFixed(0)}% of expenses` : ''}</div>
+                  </div>
+                  <div
+                    className="kpi-card"
+                    style={{ cursor: prevBar && lastBar ? 'help' : 'default', position: 'relative' }}
+                    onMouseEnter={() => setShowDeltaTip(true)}
+                    onMouseLeave={() => setShowDeltaTip(false)}
+                  >
+                    <div className="kpi-label">
+                      Expenses Δ vs Prior {prevBar && lastBar && <span style={{ opacity: 0.5 }}>ⓘ</span>}
+                    </div>
+                    <div className="kpi-value" style={{ color: deltaColor, fontSize: 22 }}>
+                      {periodDeltaPct == null ? '—' : `${periodDeltaPct >= 0 ? '+' : ''}${periodDeltaPct.toFixed(1)}%`}
+                    </div>
+                    <div className="kpi-sub">{prevBar && lastBar ? `${prevBar.period_label} → ${lastBar.period_label}` : 'needs 2 periods'}</div>
+                    {showDeltaTip && prevBar && lastBar && (() => {
+                      const prevAmt = parseFloat(prevBar.expenses)
+                      const lastAmt = parseFloat(lastBar.expenses)
+                      const diff = lastAmt - prevAmt
+                      return (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 8px)',
+                            right: 0,
+                            zIndex: 50,
+                            minWidth: 220,
+                            padding: '10px 12px',
+                            background: 'var(--bg2, #1a2733)',
+                            color: 'var(--text1, #e6f1f8)',
+                            border: '1px solid var(--border, rgba(86,200,240,0.15))',
+                            borderRadius: 6,
+                            fontSize: 12,
+                            lineHeight: 1.5,
+                            boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+                            pointerEvents: 'none',
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                            <span style={{ opacity: 0.7 }}>{prevBar.period_label}</span>
+                            <span className="mono">{fmtMoney(prevBar.expenses)}</span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                            <span style={{ opacity: 0.7 }}>{lastBar.period_label}</span>
+                            <span className="mono">{fmtMoney(lastBar.expenses)}</span>
+                          </div>
+                          <div style={{ borderTop: '1px solid var(--border, rgba(86,200,240,0.15))', marginTop: 6, paddingTop: 6, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                            <span style={{ fontWeight: 600 }}>Change</span>
+                            <span className="mono" style={{ color: deltaColor, fontWeight: 600 }}>
+                              {diff >= 0 ? '+' : ''}{fmtMoney(String(diff))}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })()}
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 16, marginTop: 16 }}>
+                  <div className="card">
+                    <div className="card-hd">
+                      <div><div className="card-title">Expense Trendlines</div><div className="card-sub">by sub-category · closed periods</div></div>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          className={`btn btn-sm ${trendScale === 'all' ? 'btn-primary' : 'btn-ghost'}`}
+                          onClick={() => setTrendScale('all')}
+                        >
+                          All
+                        </button>
+                        <button
+                          className={`btn btn-sm ${trendScale === 'under1k' ? 'btn-primary' : 'btn-ghost'}`}
+                          onClick={() => setTrendScale('under1k')}
+                        >
+                          Under $1k
+                        </button>
+                      </div>
+                    </div>
+                    <div className="card-bd" style={{ padding: '16px 20px' }}>
+                      {data.expense_category_series.length
+                        ? <div style={{ height: 200 }}><canvas ref={stackRef} /></div>
+                        : <EmptyState message="No expenses yet." hint="Close a period to see category trends." />}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="card-hd"><div><div className="card-title">Expense Mix</div><div className="card-sub">top 8 · {scopeLabel}</div></div></div>
+                    <div className="card-bd" style={{ padding: '16px 20px' }}>
+                      {data.top_expense_categories.length
+                        ? <div style={{ height: 200 }}><canvas ref={donutRef} /></div>
+                        : <EmptyState message="No expenses yet." />}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card mt-16">
+                  <div className="card-hd"><div><div className="card-title">Category Spend vs Compensation</div><div className="card-sub">each sub-category as % of salary + bonus · top 8</div></div></div>
+                  <div className="card-bd" style={{ padding: '16px 20px' }}>
+                    {data.top_expense_categories.length && parseFloat(data.compensation_income) > 0
+                      ? <div style={{ height: 170 }}><canvas ref={compRef} /></div>
+                      : <EmptyState message="No data yet." hint="Needs both expenses and compensation income." />}
+                  </div>
+                </div>
+
+              </>
+            )
+          })()}
         </>
       )}
+      </div>
     </Layout>
   )
 }

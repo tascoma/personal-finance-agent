@@ -8,6 +8,7 @@ from app.dependencies import get_current_user, get_db_session
 from app.schemas.api_responses import (
     DashboardResponse,
     ExpenseCategoryPoint,
+    ExpenseCategorySeriesPoint,
     NetWorthPoint,
     PeriodBarPoint,
     RecentEntryPoint,
@@ -41,6 +42,7 @@ async def get_dashboard(
         salary_income=str(data.salary_income),
         retirement_contributions=str(data.retirement_contributions),
         compensation_income=str(data.compensation_income),
+        lifestyle_expenses=str(data.lifestyle_expenses),
         period_count=data.period_count,
         has_data=data.has_data,
         period_bars=[
@@ -59,6 +61,14 @@ async def get_dashboard(
         top_expense_categories=[
             ExpenseCategoryPoint(category=c.label, amount=str(c.amount))
             for c in data.top_expense_categories
+        ],
+        expense_category_series=[
+            ExpenseCategorySeriesPoint(
+                period_label=p.period_label,
+                category=p.category,
+                amount=str(p.amount),
+            )
+            for p in data.expense_category_series
         ],
         recent_entries=[
             RecentEntryPoint(

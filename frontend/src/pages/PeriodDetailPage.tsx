@@ -250,6 +250,7 @@ export default function PeriodDetailPage() {
             {documents.length === 0 ? (
               <EmptyState icon="file" message="No documents uploaded yet." hint={canEdit ? 'Upload PDFs, CSVs, or XLSX files using the form above.' : 'This period is no longer open for uploads.'} />
             ) : (
+              <div className="table-scroll">
               <table className="data-table">
                 <thead>
                   <tr><th>File</th><th>Type</th><th>Source Account</th><th>Status</th><th>Uploaded</th><th /></tr>
@@ -312,6 +313,7 @@ export default function PeriodDetailPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
 
@@ -324,6 +326,7 @@ export default function PeriodDetailPage() {
                 </div>
               </div>
               <div className="card-bd-sm">
+                <div className="table-scroll">
                 <table className="data-table" style={{ marginBottom: 8 }}>
                   <thead>
                     <tr><th style={{ width: 140 }}>Date</th><th>Description</th><th style={{ width: 120 }}>Amount</th><th style={{ width: 240 }}>Account</th><th style={{ width: 36 }} /></tr>
@@ -349,6 +352,7 @@ export default function PeriodDetailPage() {
                     ))}
                   </tbody>
                 </table>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                   <button className="btn btn-ghost btn-sm" onClick={() => setTxnRows((rs) => [...rs, { date: '', desc: '', amount: '', acct: '' }])}>
                     <SvgIcon name="plus" size={12} /> Add Row

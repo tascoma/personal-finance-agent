@@ -25,6 +25,7 @@ function SectionTable({ sections, totalLabel, totalAmount }: {
     return <div className="empty-state"><p className="empty-msg">No activity for this section.</p></div>
   }
   return (
+    <div className="table-scroll">
     <table className="data-table">
       <tbody>
         {sections.map((sec) => (
@@ -63,6 +64,7 @@ function SectionTable({ sections, totalLabel, totalAmount }: {
         </tr>
       </tfoot>
     </table>
+    </div>
   )
 }
 
@@ -247,6 +249,55 @@ export default function StatementsPage() {
                         )
                       })}
                     </tr>
+                    {bs.off_balance_sheet.length > 0 && (
+                      <>
+                        <tr>
+                          <td colSpan={bs.periods.length + 1} className="color-text2" style={{ fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: 24, fontStyle: 'italic', fontWeight: 600 }}>
+                            Off-Balance-Sheet (Memo)
+                          </td>
+                        </tr>
+                        {bs.off_balance_sheet.map((sec) => (
+                          <Fragment key={sec.label}>
+                            <tr>
+                              <td colSpan={bs.periods.length + 1} className="color-text3" style={{ fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.05em', paddingTop: 10 }}>
+                                {sec.label}
+                              </td>
+                            </tr>
+                            {sec.rows.map((row) => (
+                              <tr key={row.account_code}>
+                                <td style={{ paddingLeft: 28 }}>
+                                  <span className="mono color-text3" style={{ fontSize: 12.5 }}>{row.account_code}</span>
+                                  <span style={{ marginLeft: 10 }}>{row.account_name}</span>
+                                </td>
+                                {row.balances.map((bal, i) => (
+                                  <td key={i} className="mono text-right" style={{ minWidth: 120 }}>
+                                    {bal && parseFloat(bal) !== 0 ? <Money val={bal} /> : null}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                            <tr>
+                              <td className="color-text2" style={{ paddingLeft: 28, fontStyle: 'italic', fontSize: 12.5 }}>
+                                Subtotal — {sec.label}
+                              </td>
+                              {sec.subtotals.map((st, i) => (
+                                <td key={i} className="mono text-right" style={{ borderTop: '1px solid var(--border)' }}>
+                                  <Money val={st} />
+                                </td>
+                              ))}
+                            </tr>
+                          </Fragment>
+                        ))}
+                        <tr>
+                          <td className="color-text2" style={{ fontStyle: 'italic' }}>Total Off-Balance-Sheet</td>
+                          {bs.total_off_balance_sheet.map((t, i) => (
+                            <td key={i} className="mono text-right" style={{ borderTop: '1px solid var(--border-md)' }}>
+                              <Money val={t} />
+                            </td>
+                          ))}
+                        </tr>
+                      </>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -279,6 +330,26 @@ export default function StatementsPage() {
                       <td className="fw-600">Net Income</td>
                       <td className="mono text-right fw-600" style={{ width: 160 }}>
                         <Money val={inc.net_income} />
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+                {inc.other_comprehensive_income.length > 0 && (
+                  <>
+                    <h3 style={{ fontSize: 14, margin: '24px 0 6px 0' }}>Other Comprehensive Income</h3>
+                    <SectionTable
+                      sections={inc.other_comprehensive_income}
+                      totalLabel="Total Other Comprehensive Income"
+                      totalAmount={inc.total_oci}
+                    />
+                  </>
+                )}
+                <table className="data-table" style={{ marginTop: 18 }}>
+                  <tfoot>
+                    <tr>
+                      <td className="fw-600">Comprehensive Income</td>
+                      <td className="mono text-right fw-600" style={{ width: 160 }}>
+                        <Money val={inc.comprehensive_income} />
                       </td>
                     </tr>
                   </tfoot>

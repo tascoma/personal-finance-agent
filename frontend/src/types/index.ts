@@ -135,6 +135,12 @@ export interface ExpenseCategoryPoint {
   amount: string
 }
 
+export interface ExpenseCategorySeriesPoint {
+  period_label: string
+  category: string
+  amount: string
+}
+
 export interface RecentEntryPoint {
   description: string
   entry_date: string
@@ -154,11 +160,13 @@ export interface DashboardResponse {
   salary_income: string
   retirement_contributions: string
   compensation_income: string
+  lifestyle_expenses: string
   period_count: number
   has_data: boolean
   period_bars: PeriodBarPoint[]
   net_worth_series: NetWorthPoint[]
   top_expense_categories: ExpenseCategoryPoint[]
+  expense_category_series: ExpenseCategorySeriesPoint[]
   recent_entries: RecentEntryPoint[]
   active_period: Period | null
 }
@@ -223,18 +231,23 @@ export interface BalanceSheetPivotResponse {
   assets: BalanceSheetPivotSection[]
   liabilities: BalanceSheetPivotSection[]
   equity: BalanceSheetPivotSection[]
+  off_balance_sheet: BalanceSheetPivotSection[]
   total_assets: string[]
   total_liabilities: string[]
   total_equity: string[]
+  total_off_balance_sheet: string[]
 }
 
 export interface IncomeStatementResponse {
   range_label: string
   income: StatementSection[]
   expenses: StatementSection[]
+  other_comprehensive_income: StatementSection[]
   total_income: string
   total_expenses: string
+  total_oci: string
   net_income: string
+  comprehensive_income: string
 }
 
 export interface CashflowStatementResponse {

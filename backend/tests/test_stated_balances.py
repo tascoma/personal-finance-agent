@@ -109,7 +109,8 @@ async def test_list_balance_accounts_filters_to_assets_and_liabilities(
     async with session_factory() as session:
         accounts = await stated_balance_service.list_balance_accounts(session)
     codes = {a.account_code for a in accounts}
-    assert codes == {100101, 200101}  # Income excluded; memo excluded
+    # Income excluded; non-memo Asset/Liability + memo accounts included.
+    assert codes == {100101, 200101, 112102}
 
 
 @pytest.mark.asyncio

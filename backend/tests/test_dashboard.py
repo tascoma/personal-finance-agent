@@ -166,6 +166,86 @@ async def test_dashboard_unknown_period_filter_returns_empty_aggregates(
     assert response.json()["period_bars"] == []
 
 
+@pytest_asyncio.fixture
+async def closed_period_with_lifestyle(session_factory):
+    """Seed one closed period with salary + bonus, groceries, travel, and dining out.
+
+    Travel (sub_category="Lifestyle") and Dining Out (acct 520102) should both
+    count as lifestyle; Groceries should not.
+    """
+    async with session_factory() as session:
+        period = Period(
+            period_start=date(2026, 2, 1),
+            period_end=date(2026, 2, 28),
+            status="closed",
+            closed_at=datetime(2026, 3, 1),
+        )
+        session.add(period)
+        session.add_all([
+            Account(account_code=100101, account_name="Checking", account_type="Asset",
+                    sub_category="Cash", normal_balance="debit", is_memo=False, is_active=True),
+            Account(account_code=400101, account_name="Salary", account_type="Income",
+                    sub_category="Earned Income", normal_balance="credit", is_memo=False, is_active=True),
+            Account(account_code=400102, account_name="Bonus", account_type="Income",
+                    sub_category="Variable Compensation", normal_balance="credit", is_memo=False, is_active=True),
+            Account(account_code=520101, account_name="Groceries", account_type="Expense",
+                    sub_category="Food", normal_balance="debit", is_memo=False, is_active=True),
+            Account(account_code=520102, account_name="Dining Out", account_type="Expense",
+                    sub_category="Food", normal_balance="debit", is_memo=False, is_active=True),
+            Account(account_code=550101, account_name="Travel", account_type="Expense",
+                    sub_category="Lifestyle", normal_balance="debit", is_memo=False, is_active=True),
+        ])
+        await session.flush()
+
+        entry = JournalEntry(
+            entry_id=uuid.uuid4(),
+            period_id=period.period_id,
+            entry_date=date(2026, 2, 15),
+            description="Period activity",
+            source_type="manual",
+        )
+        session.add(entry)
+        await session.flush()
+
+        session.add_all([
+            JournalLine(line_id=uuid.uuid4(), entry_id=entry.entry_id,
+                        account_code=100101, debit_amount=Decimal("8400"), credit_amount=Decimal("0")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=entry.entry_id,
+                        account_code=400101, debit_amount=Decimal("0"), credit_amount=Decimal("5000")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=entry.entry_id,
+                        account_code=400102, debit_amount=Decimal("0"), credit_amount=Decimal("5000")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=entry.entry_id,
+                        account_code=520101, debit_amount=Decimal("400"), credit_amount=Decimal("0")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=entry.entry_id,
+                        account_code=520102, debit_amount=Decimal("200"), credit_amount=Decimal("0")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=entry.entry_id,
+                        account_code=550101, debit_amount=Decimal("1000"), credit_amount=Decimal("0")),
+        ])
+        await session.commit()
+
+        return period.period_id
+
+
+@pytest.mark.asyncio
+async def test_dashboard_lifestyle_and_category_series(
+    client: AsyncClient, closed_period_with_lifestyle
+):
+    response = await client.get("/api/v1/dashboard")
+    assert response.status_code == 200
+    body = response.json()
+
+    # Travel (1000) + Dining Out (200); Groceries excluded.
+    assert Decimal(body["lifestyle_expenses"]) == Decimal("1200.00")
+    assert Decimal(body["compensation_income"]) == Decimal("10000.00")
+
+    series = body["expense_category_series"]
+    by_cat = {row["category"]: Decimal(row["amount"]) for row in series}
+    # Food = Groceries (400) + Dining Out (200); Lifestyle = Travel (1000).
+    assert by_cat["Food"] == Decimal("600.00")
+    assert by_cat["Lifestyle"] == Decimal("1000.00")
+    assert all(row["period_label"] == "Feb 2026" for row in series)
+
+
 @pytest.mark.asyncio
 async def test_dashboard_requires_auth():
     transport = ASGITransport(app=app)
