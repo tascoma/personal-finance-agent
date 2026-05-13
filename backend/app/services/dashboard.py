@@ -44,6 +44,19 @@ class ExpenseCategorySeriesPoint:
 
 
 @dataclass
+class AssetCompositionPoint:
+    sub_category: str
+    amount: float
+
+
+@dataclass
+class AssetSeriesPoint:
+    period_label: str
+    sub_category: str
+    amount: float
+
+
+@dataclass
 class RecentEntry:
     description: str
     entry_date: str
@@ -69,9 +82,16 @@ class DashboardData:
     net_worth_series: list[NetWorthPoint]
     top_expense_categories: list[ExpenseCategory]
     expense_category_series: list[ExpenseCategorySeriesPoint]
+    asset_composition: list[AssetCompositionPoint]
+    asset_series: list[AssetSeriesPoint]
     recent_entries: list[RecentEntry]
     period_count: int
     has_data: bool
+    liquid_assets: Decimal
+    liquid_assets_prev: Decimal
+    tax_advantaged: Decimal
+    tax_advantaged_prev: Decimal
+    total_assets_prev: Decimal
 
 
 def _sum_by_type(
@@ -97,6 +117,8 @@ def _sum_by_type(
 # Dining Out + Alcohol are treated as discretionary alongside the "Lifestyle"
 # sub_category (Travel, Entertainment, Hobbies, Electronics).
 _LIFESTYLE_EXTRA_CODES = {520102, 520103}
+_RETIREMENT_CODES = frozenset({111101, 111102, 111103})
+_REAL_ESTATE_SUBCATS = frozenset({"Real Estate"})
 
 
 def _is_lifestyle(acct: Account) -> bool:
@@ -124,6 +146,8 @@ async def compute_dashboard(
     db: AsyncSession,
     year: Optional[int] = None,
     period_id: Optional[uuid.UUID] = None,
+    from_period_id: Optional[uuid.UUID] = None,
+    to_period_id: Optional[uuid.UUID] = None,
 ) -> DashboardData:
     accounts_result = await db.scalars(select(Account))
     accounts: dict[int, Account] = {a.account_code: a for a in accounts_result.all()}
@@ -133,6 +157,14 @@ async def compute_dashboard(
 
     if period_id is not None:
         periods = [p for p in all_periods if p.period_id == period_id]
+    elif from_period_id is not None or to_period_id is not None:
+        from_start = next((p.period_start for p in all_periods if p.period_id == from_period_id), None)
+        to_start = next((p.period_start for p in all_periods if p.period_id == to_period_id), None)
+        periods = [
+            p for p in all_periods
+            if (from_start is None or p.period_start >= from_start)
+            and (to_start is None or p.period_start <= to_start)
+        ]
     elif year is not None:
         periods = [p for p in all_periods if p.period_start.year == year]
     else:
@@ -214,7 +246,6 @@ async def compute_dashboard(
 
     # Retirement contributions: only count changes from cash-touching entries so
     # investment value adjustments (which post against Income/Equity, not cash) are excluded.
-    _retirement_codes = {111101, 111102, 111103}
     retirement_contributions = _ZERO
     for entry_lines in lines_operating_by_entry.values():
         if not any(ln.account_code in cash_codes for ln in entry_lines):
@@ -222,7 +253,7 @@ async def compute_dashboard(
         if any(accounts.get(ln.account_code) and accounts[ln.account_code].account_type == "Equity" for ln in entry_lines):
             continue
         for ln in entry_lines:
-            if ln.account_code in _retirement_codes:
+            if ln.account_code in _RETIREMENT_CODES:
                 retirement_contributions += ln.debit_amount - ln.credit_amount
     _compensation_codes = {400101, 400102}
     compensation_income = sum(
@@ -243,13 +274,37 @@ async def compute_dashboard(
     period_bars: list[PeriodBar] = []
     running_assets = _ZERO
     running_liabilities = _ZERO
+    running_liquid = _ZERO
+    running_tax_adv = _ZERO
+    running_assets_by_subcat: dict[str, Decimal] = defaultdict(lambda: _ZERO)
     net_worth_series: list[NetWorthPoint] = []
     expense_category_series: list[ExpenseCategorySeriesPoint] = []
+    asset_series: list[AssetSeriesPoint] = []
+    asset_composition_snapshot: dict[str, Decimal] = {}
+    liquid_filter_snapshots: list[Decimal] = []
+    tax_adv_filter_snapshots: list[Decimal] = []
+    total_assets_filter_snapshots: list[Decimal] = []
 
     for p in all_closed_periods:
         p_bs_lines = lines_bs_by_pid.get(p.period_id, [])
         running_assets += _sum_by_type(p_bs_lines, accounts, "Asset")
         running_liabilities += _sum_by_type(p_bs_lines, accounts, "Liability")
+
+        for ln in p_bs_lines:
+            acct = accounts.get(ln.account_code)
+            if acct is None or acct.account_type != "Asset" or acct.is_memo:
+                continue
+            delta = ln.debit_amount - ln.credit_amount
+            running_assets_by_subcat[acct.sub_category] += delta
+            if acct.account_code in _RETIREMENT_CODES:
+                running_tax_adv += delta
+            elif acct.sub_category not in _REAL_ESTATE_SUBCATS:
+                running_liquid += delta
+
+        if p.period_id in filter_closed_ids:
+            liquid_filter_snapshots.append(running_liquid)
+            tax_adv_filter_snapshots.append(running_tax_adv)
+            total_assets_filter_snapshots.append(running_assets)
 
         if p.period_id not in filter_closed_ids:
             continue
@@ -282,6 +337,32 @@ async def compute_dashboard(
                     category=cat,
                     amount=float(amt),
                 ))
+
+        for subcat, amt in running_assets_by_subcat.items():
+            if amt > _ZERO:
+                asset_series.append(AssetSeriesPoint(
+                    period_label=label,
+                    sub_category=subcat,
+                    amount=float(amt),
+                ))
+        # Composition reflects the latest filter-scope period; overwritten each iteration.
+        asset_composition_snapshot = dict(running_assets_by_subcat)
+
+    asset_composition = sorted(
+        [
+            AssetCompositionPoint(sub_category=k, amount=float(v))
+            for k, v in asset_composition_snapshot.items()
+            if v > _ZERO
+        ],
+        key=lambda c: c.amount,
+        reverse=True,
+    )
+
+    liquid_assets = liquid_filter_snapshots[-1] if liquid_filter_snapshots else _ZERO
+    liquid_assets_prev = liquid_filter_snapshots[-2] if len(liquid_filter_snapshots) >= 2 else _ZERO
+    tax_advantaged = tax_adv_filter_snapshots[-1] if tax_adv_filter_snapshots else _ZERO
+    tax_advantaged_prev = tax_adv_filter_snapshots[-2] if len(tax_adv_filter_snapshots) >= 2 else _ZERO
+    total_assets_prev_val = total_assets_filter_snapshots[-2] if len(total_assets_filter_snapshots) >= 2 else _ZERO
 
     top_expense_categories = _expense_by_subcategory(lines_operating, accounts)
 
@@ -328,7 +409,14 @@ async def compute_dashboard(
         net_worth_series=net_worth_series,
         top_expense_categories=top_expense_categories,
         expense_category_series=expense_category_series,
+        asset_composition=asset_composition,
+        asset_series=asset_series,
         recent_entries=recent_entries,
         period_count=len(closed_filter_periods),
         has_data=has_data,
+        liquid_assets=liquid_assets,
+        liquid_assets_prev=liquid_assets_prev,
+        tax_advantaged=tax_advantaged,
+        tax_advantaged_prev=tax_advantaged_prev,
+        total_assets_prev=total_assets_prev_val,
     )

@@ -141,6 +141,17 @@ export interface ExpenseCategorySeriesPoint {
   amount: string
 }
 
+export interface AssetCompositionPoint {
+  sub_category: string
+  amount: string
+}
+
+export interface AssetSeriesPoint {
+  period_label: string
+  sub_category: string
+  amount: string
+}
+
 export interface RecentEntryPoint {
   description: string
   entry_date: string
@@ -154,6 +165,7 @@ export interface DashboardResponse {
   total_expenses: string
   net_income: string
   total_assets: string
+  total_assets_prev: string
   total_liabilities: string
   net_worth: string
   investing_cashflow: string
@@ -161,12 +173,18 @@ export interface DashboardResponse {
   retirement_contributions: string
   compensation_income: string
   lifestyle_expenses: string
+  liquid_assets: string
+  liquid_assets_prev: string
+  tax_advantaged: string
+  tax_advantaged_prev: string
   period_count: number
   has_data: boolean
   period_bars: PeriodBarPoint[]
   net_worth_series: NetWorthPoint[]
   top_expense_categories: ExpenseCategoryPoint[]
   expense_category_series: ExpenseCategorySeriesPoint[]
+  asset_composition: AssetCompositionPoint[]
+  asset_series: AssetSeriesPoint[]
   recent_entries: RecentEntryPoint[]
   active_period: Period | null
 }

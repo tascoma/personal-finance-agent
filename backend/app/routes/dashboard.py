@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db_session
 from app.schemas.api_responses import (
+    AssetCompositionPoint,
+    AssetSeriesPoint,
     DashboardResponse,
     ExpenseCategoryPoint,
     ExpenseCategorySeriesPoint,
@@ -26,9 +28,17 @@ router = APIRouter(tags=["dashboard"], dependencies=[Depends(get_current_user)])
 async def get_dashboard(
     year: int | None = Query(None),
     period_id: uuid.UUID | None = Query(None),
+    from_period_id: uuid.UUID | None = Query(None),
+    to_period_id: uuid.UUID | None = Query(None),
     db: AsyncSession = Depends(get_db_session),
 ) -> DashboardResponse:
-    data = await dashboard_service.compute_dashboard(db, year=year, period_id=period_id)
+    data = await dashboard_service.compute_dashboard(
+        db,
+        year=year,
+        period_id=period_id,
+        from_period_id=from_period_id,
+        to_period_id=to_period_id,
+    )
     active_period = await get_current_open_period(db)
 
     return DashboardResponse(
@@ -36,6 +46,7 @@ async def get_dashboard(
         total_expenses=str(data.total_expenses),
         net_income=str(data.net_income),
         total_assets=str(data.total_assets),
+        total_assets_prev=str(data.total_assets_prev),
         total_liabilities=str(data.total_liabilities),
         net_worth=str(data.net_worth),
         investing_cashflow=str(data.investing_cashflow),
@@ -43,6 +54,10 @@ async def get_dashboard(
         retirement_contributions=str(data.retirement_contributions),
         compensation_income=str(data.compensation_income),
         lifestyle_expenses=str(data.lifestyle_expenses),
+        liquid_assets=str(data.liquid_assets),
+        liquid_assets_prev=str(data.liquid_assets_prev),
+        tax_advantaged=str(data.tax_advantaged),
+        tax_advantaged_prev=str(data.tax_advantaged_prev),
         period_count=data.period_count,
         has_data=data.has_data,
         period_bars=[
@@ -69,6 +84,18 @@ async def get_dashboard(
                 amount=str(p.amount),
             )
             for p in data.expense_category_series
+        ],
+        asset_composition=[
+            AssetCompositionPoint(sub_category=c.sub_category, amount=str(c.amount))
+            for c in data.asset_composition
+        ],
+        asset_series=[
+            AssetSeriesPoint(
+                period_label=p.period_label,
+                sub_category=p.sub_category,
+                amount=str(p.amount),
+            )
+            for p in data.asset_series
         ],
         recent_entries=[
             RecentEntryPoint(
