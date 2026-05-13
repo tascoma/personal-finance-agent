@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import {
   Chart,
   BarElement, LineElement, PointElement, ArcElement,
@@ -22,16 +22,12 @@ import { fmtPeriod, fmtMoney } from '../utils/format'
 
 Chart.register(BarElement, LineElement, PointElement, ArcElement, BarController, LineController, DoughnutController, CategoryScale, LinearScale, Tooltip, Legend, Filler)
 
-function kpiColor(val: string, positive: string, negative: string) {
-  return parseFloat(val) >= 0 ? positive : negative
-}
 
-
-type DashboardTab = 'overview' | 'insights'
+type DashboardTab = 'overview' | 'insights' | 'assets'
 
 export default function DashboardPage() {
-  const [selectedYear, setSelectedYear] = useState<number | null>(null)
-  const [selectedPeriodId, setSelectedPeriodId] = useState<string | null>(null)
+  const [fromPeriodId, setFromPeriodId] = useState<string | null>(null)
+  const [toPeriodId, setToPeriodId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview')
   const [trendScale, setTrendScale] = useState<'all' | 'under1k'>('all')
   const [showLifestyleTip, setShowLifestyleTip] = useState(false)
@@ -48,34 +44,35 @@ export default function DashboardPage() {
     [allPeriods],
   )
 
-  const availableYears = useMemo(
-    () => [...new Set(closedPeriods.map((p) => parseInt(p.period_start.slice(0, 4), 10)))].sort((a, b) => b - a),
-    [closedPeriods],
-  )
+  const toOptions = useMemo(() => {
+    if (!fromPeriodId) return closedPeriods
+    const fromStart = closedPeriods.find((p) => p.period_id === fromPeriodId)?.period_start
+    return fromStart ? closedPeriods.filter((p) => p.period_start >= fromStart) : closedPeriods
+  }, [closedPeriods, fromPeriodId])
 
-  const periodsForYear = useMemo(
-    () => selectedYear == null ? [] : closedPeriods.filter((p) => parseInt(p.period_start.slice(0, 4), 10) === selectedYear),
-    [closedPeriods, selectedYear],
-  )
-
-  function handleYearChange(year: number | null) {
-    setSelectedYear(year)
-    setSelectedPeriodId(null)
+  function handleFromChange(id: string | null) {
+    setFromPeriodId(id)
+    if (id && toPeriodId) {
+      const fromStart = closedPeriods.find((p) => p.period_id === id)?.period_start
+      const toStart = closedPeriods.find((p) => p.period_id === toPeriodId)?.period_start
+      if (fromStart && toStart && toStart < fromStart) setToPeriodId(null)
+    }
   }
 
   const scopeLabel = useMemo(() => {
-    if (selectedPeriodId) {
-      const p = closedPeriods.find((p) => p.period_id === selectedPeriodId)
-      return p ? fmtPeriod(p.period_start) : fmtPeriod(selectedPeriodId)
-    }
-    if (selectedYear) return String(selectedYear)
+    const fromPeriod = closedPeriods.find((p) => p.period_id === fromPeriodId)
+    const toPeriod = closedPeriods.find((p) => p.period_id === toPeriodId)
+    if (fromPeriod && toPeriod) return `${fmtPeriod(fromPeriod.period_start)} → ${fmtPeriod(toPeriod.period_start)}`
+    if (fromPeriod) return `${fmtPeriod(fromPeriod.period_start)} → latest`
+    if (toPeriod) return `earliest → ${fmtPeriod(toPeriod.period_start)}`
     return 'all periods'
-  }, [selectedPeriodId, selectedYear, closedPeriods])
+  }, [fromPeriodId, toPeriodId, closedPeriods])
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['dashboard', selectedYear, selectedPeriodId],
-    queryFn: () => fetchDashboard(selectedYear ?? undefined, selectedPeriodId ?? undefined),
+  const { data, isLoading, isFetching, error } = useQuery({
+    queryKey: ['dashboard', fromPeriodId, toPeriodId],
+    queryFn: () => fetchDashboard(fromPeriodId ?? undefined, toPeriodId ?? undefined),
     staleTime: 30_000,
+    placeholderData: keepPreviousData,
   })
 
   const ieRef = useRef<HTMLCanvasElement>(null)
@@ -84,8 +81,12 @@ export default function DashboardPage() {
   const stackRef = useRef<HTMLCanvasElement>(null)
   const donutRef = useRef<HTMLCanvasElement>(null)
   const compRef = useRef<HTMLCanvasElement>(null)
+  const assetGrowthRef = useRef<HTMLCanvasElement>(null)
+  const assetMixRef = useRef<HTMLCanvasElement>(null)
+  const assetStackRef = useRef<HTMLCanvasElement>(null)
   const chartRefs = useRef<Chart[]>([])
   const trendChartRef = useRef<Chart | null>(null)
+  const assetChartsRef = useRef<Chart[]>([])
 
   useEffect(() => {
     if (!data) return
@@ -320,7 +321,147 @@ export default function DashboardPage() {
     return () => { trendChartRef.current?.destroy(); trendChartRef.current = null }
   }, [data, activeTab, trendScale])
 
-  if (isLoading) return <Layout><p className="color-text3">Loading…</p></Layout>
+  useEffect(() => {
+    if (!data || activeTab !== 'assets') return
+
+    assetChartsRef.current.forEach((c) => c.destroy())
+    assetChartsRef.current = []
+
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light'
+    const green  = isDark ? '#4ade80' : '#16a34a'
+    const red    = isDark ? '#f87171' : '#dc2626'
+    const accent = isDark ? '#56c8f0' : '#0284c7'
+    const amber  = isDark ? '#fbbf24' : '#b45309'
+    const catColors = [accent, green, amber, '#a78bfa', '#38bdf8', '#fb923c', '#34d399', red]
+
+    const moneyTick = (v: number | string) => `$${Number(v).toLocaleString()}`
+
+    const periodLabels = [...new Set(data.asset_series.map((p) => p.period_label))]
+    const subCategories = [...new Set(data.asset_series.map((p) => p.sub_category))]
+    const seriesByKey = new Map<string, number>()
+    for (const row of data.asset_series) {
+      seriesByKey.set(`${row.period_label}|${row.sub_category}`, parseFloat(row.amount))
+    }
+
+    // Stable color map keyed by sub-category so both charts always agree.
+    const subCatColor = new Map<string, string>(
+      data.asset_composition.map((d, i) => [d.sub_category, catColors[i % catColors.length]])
+    )
+    const colorOf = (sc: string) => subCatColor.get(sc) ?? catColors[0]
+
+    if (assetGrowthRef.current && periodLabels.length) {
+      const totalsByPeriod = periodLabels.map((pl) =>
+        subCategories.reduce((acc, sc) => acc + (seriesByKey.get(`${pl}|${sc}`) ?? 0), 0),
+      )
+      const ctx2d = assetGrowthRef.current.getContext('2d')!
+      const gradient = ctx2d.createLinearGradient(0, 0, 0, assetGrowthRef.current.clientHeight || 200)
+      gradient.addColorStop(0, accent + '55')
+      gradient.addColorStop(1, accent + '00')
+      assetChartsRef.current.push(new Chart(assetGrowthRef.current, {
+        type: 'line',
+        data: {
+          labels: periodLabels,
+          datasets: [{
+            label: 'Total Assets',
+            data: totalsByPeriod,
+            borderColor: accent,
+            backgroundColor: gradient,
+            borderWidth: 2,
+            pointBackgroundColor: accent,
+            pointRadius: 4,
+            fill: true,
+            tension: 0.35,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ` $${(ctx.parsed.y ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}` } } },
+          scales: { x: { grid: { display: false } }, y: { ticks: { callback: moneyTick } } },
+        },
+      }))
+    }
+
+    if (assetMixRef.current && data.asset_composition.length) {
+      const totalAssets = data.asset_composition.reduce((acc, p) => acc + parseFloat(p.amount), 0)
+      const arcPctLabels: Plugin<'doughnut'> = {
+        id: 'arcPctLabels',
+        afterDatasetsDraw(chart) {
+          const ctx = chart.ctx
+          const meta = chart.getDatasetMeta(0)
+          const values = chart.data.datasets[0].data as number[]
+          meta.data.forEach((arc, i) => {
+            const pct = totalAssets > 0 ? (values[i] / totalAssets) * 100 : 0
+            if (pct < 4) return
+            const pos = (arc as unknown as { tooltipPosition: (f: boolean) => { x: number; y: number } }).tooltipPosition(true)
+            ctx.save()
+            ctx.fillStyle = '#fff'
+            ctx.font = 'bold 11px DM Sans, sans-serif'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.fillText(`${pct.toFixed(0)}%`, pos.x, pos.y)
+            ctx.restore()
+          })
+        },
+      }
+      assetChartsRef.current.push(new Chart<'doughnut'>(assetMixRef.current, {
+        type: 'doughnut',
+        data: {
+          labels: data.asset_composition.map((d) => d.sub_category),
+          datasets: [{
+            data: data.asset_composition.map((d) => parseFloat(d.amount)),
+            backgroundColor: data.asset_composition.map((d) => colorOf(d.sub_category) + 'cc'),
+            borderColor: data.asset_composition.map((d) => colorOf(d.sub_category)),
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, cutout: '60%',
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } },
+            tooltip: { callbacks: { label: (ctx) => {
+              const amt = Number(ctx.parsed ?? 0)
+              const pct = totalAssets > 0 ? (amt / totalAssets) * 100 : 0
+              return ` ${ctx.label}: $${amt.toLocaleString('en-US', { minimumFractionDigits: 2 })} (${pct.toFixed(1)}%)`
+            } } },
+          },
+        },
+        plugins: [arcPctLabels],
+      }))
+    }
+
+    if (assetStackRef.current && periodLabels.length && subCategories.length) {
+      const datasets = subCategories.map((sc) => {
+        const color = colorOf(sc)
+        return {
+          label: sc,
+          data: periodLabels.map((pl) => seriesByKey.get(`${pl}|${sc}`) ?? 0),
+          backgroundColor: color + 'cc',
+          borderColor: color,
+          borderWidth: 1,
+          borderRadius: 2,
+        }
+      })
+      assetChartsRef.current.push(new Chart(assetStackRef.current, {
+        type: 'bar',
+        data: { labels: periodLabels, datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } },
+            tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: $${(ctx.parsed.y ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}` } },
+          },
+          scales: {
+            x: { stacked: true, grid: { display: false } },
+            y: { stacked: true, ticks: { callback: moneyTick } },
+          },
+        },
+      }))
+    }
+
+    return () => { assetChartsRef.current.forEach((c) => c.destroy()); assetChartsRef.current = [] }
+  }, [data, activeTab])
+
+  if (isLoading && !data) return <Layout><p className="color-text3">Loading…</p></Layout>
   if (error || !data) return <Layout><p className="color-red">Failed to load dashboard.</p></Layout>
 
   return (
@@ -337,34 +478,38 @@ export default function DashboardPage() {
         )}
       />
 
-      {availableYears.length > 0 && (
+      {closedPeriods.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-          <select
-            className="inp inp-fit"
-            style={{ minWidth: 130 }}
-            value={selectedYear ?? ''}
-            onChange={(e) => handleYearChange(e.target.value ? parseInt(e.target.value, 10) : null)}
-          >
-            <option value="">All years</option>
-            {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
+          <span className="color-text3" style={{ fontSize: 12 }}>From</span>
           <select
             className="inp inp-fit"
             style={{ minWidth: 160 }}
-            value={selectedPeriodId ?? ''}
-            disabled={selectedYear == null}
-            onChange={(e) => setSelectedPeriodId(e.target.value || null)}
+            value={fromPeriodId ?? ''}
+            onChange={(e) => handleFromChange(e.target.value || null)}
           >
-            <option value="">All periods</option>
-            {periodsForYear.map((p) => (
+            <option value="">Earliest</option>
+            {closedPeriods.map((p) => (
               <option key={p.period_id} value={p.period_id}>{fmtPeriod(p.period_start)}</option>
             ))}
           </select>
-          {(selectedYear != null || selectedPeriodId != null) && (
-            <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedYear(null); setSelectedPeriodId(null) }}>
+          <span className="color-text3" style={{ fontSize: 12 }}>To</span>
+          <select
+            className="inp inp-fit"
+            style={{ minWidth: 160 }}
+            value={toPeriodId ?? ''}
+            onChange={(e) => setToPeriodId(e.target.value || null)}
+          >
+            <option value="">Latest</option>
+            {toOptions.map((p) => (
+              <option key={p.period_id} value={p.period_id}>{fmtPeriod(p.period_start)}</option>
+            ))}
+          </select>
+          {(fromPeriodId != null || toPeriodId != null) && (
+            <button className="btn btn-ghost btn-sm" onClick={() => { setFromPeriodId(null); setToPeriodId(null) }}>
               Clear ×
             </button>
           )}
+          {isFetching && <span className="color-text3" style={{ fontSize: 12 }}>Updating…</span>}
         </div>
       )}
 
@@ -380,6 +525,7 @@ export default function DashboardPage() {
             tabs={[
               { key: 'overview', label: 'Overview' },
               { key: 'insights', label: 'Expense Insights' },
+              { key: 'assets', label: 'Asset Insights' },
             ]}
             active={activeTab}
             onChange={(k) => setActiveTab(k as DashboardTab)}
@@ -400,7 +546,7 @@ export default function DashboardPage() {
             </div>
             <div className="kpi-card">
               <div className="kpi-label">Net Income</div>
-              <div className="kpi-value" style={{ color: kpiColor(data.net_income, 'var(--green)', 'var(--red)'), fontSize: 22 }}>{fmtMoney(data.net_income)}</div>
+              <div className="kpi-value" style={{ color: parseFloat(data.net_income) >= 0 ? 'var(--green)' : 'var(--red)', fontSize: 22 }}>{fmtMoney(data.net_income)}</div>
               <div className="kpi-sub">{scopeLabel}</div>
             </div>
             <div className="kpi-card">
@@ -410,7 +556,7 @@ export default function DashboardPage() {
             </div>
             <div className="kpi-card">
               <div className="kpi-label">Net Worth</div>
-              <div className="kpi-value" style={{ color: kpiColor(data.net_worth, 'var(--accent)', 'var(--red)'), fontSize: 22 }}>{fmtMoney(data.net_worth)}</div>
+              <div className="kpi-value" style={{ color: parseFloat(data.net_worth) >= 0 ? 'var(--accent)' : 'var(--red)', fontSize: 22 }}>{fmtMoney(data.net_worth)}</div>
               <div className="kpi-sub">{scopeLabel}</div>
             </div>
             {(() => {
@@ -687,6 +833,139 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
+              </>
+            )
+          })()}
+
+          {activeTab === 'assets' && (() => {
+            const composition = data.asset_composition
+
+            const fmtDelta = (n: number) => {
+              const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              return n >= 0 ? `+$${abs}` : `($${abs})`
+            }
+
+            const totalAssetsCurr = parseFloat(data.total_assets)
+            const totalAssetsPrev = parseFloat(data.total_assets_prev)
+            const totalAssetsDelta = totalAssetsCurr - totalAssetsPrev
+            const hasTotalAssetsPrev = totalAssetsPrev !== 0
+
+            const liquidCurr = parseFloat(data.liquid_assets)
+            const liquidPrev = parseFloat(data.liquid_assets_prev)
+            const liquidDelta = liquidCurr - liquidPrev
+            const hasLiquidPrev = liquidPrev !== 0
+
+            const taxAdvCurr = parseFloat(data.tax_advantaged)
+            const taxAdvPrev = parseFloat(data.tax_advantaged_prev)
+            const taxAdvDelta = taxAdvCurr - taxAdvPrev
+            const hasTaxAdvPrev = taxAdvPrev !== 0
+
+            const periodLabels = [...new Set(data.asset_series.map((p) => p.period_label))]
+
+            // Growth KPIs exclude the house (Real Estate) so they reflect
+            // liquid/investable asset growth rather than home-value appreciation.
+            const GROWTH_EXCLUDED = new Set(['Real Estate'])
+            const growthTotalsByPeriod = periodLabels.map((pl) =>
+              data.asset_series
+                .filter((r) => r.period_label === pl && !GROWTH_EXCLUDED.has(r.sub_category))
+                .reduce((acc, r) => acc + parseFloat(r.amount), 0),
+            )
+            const lastG = growthTotalsByPeriod[growthTotalsByPeriod.length - 1]
+            const prevG = growthTotalsByPeriod[growthTotalsByPeriod.length - 2]
+            const popGrowthPct = prevG && prevG !== 0 ? ((lastG - prevG) / prevG) * 100 : null
+            const popGrowthDelta = popGrowthPct != null ? lastG - prevG : null
+            const growthColor = popGrowthPct == null ? 'var(--text2)' : popGrowthPct >= 0 ? 'var(--green)' : 'var(--red)'
+
+            // period_label format is "Mon YYYY" (e.g. "Jan 2026").
+            const yearOf = (label: string) => parseInt(label.split(' ')[1] ?? '', 10)
+            const latestLabel = periodLabels[periodLabels.length - 1]
+            const latestYear = latestLabel ? yearOf(latestLabel) : NaN
+            let baselineIdx = -1
+            for (let i = periodLabels.length - 1; i >= 0; i--) {
+              if (yearOf(periodLabels[i]) < latestYear) { baselineIdx = i; break }
+            }
+            const ytdBaseline = baselineIdx >= 0 ? growthTotalsByPeriod[baselineIdx] : null
+            const ytdGrowthPct = ytdBaseline != null && ytdBaseline !== 0
+              ? ((lastG - ytdBaseline) / ytdBaseline) * 100
+              : null
+            const ytdDelta = ytdGrowthPct != null ? lastG - ytdBaseline! : null
+            const ytdColor = ytdGrowthPct == null ? 'var(--text2)' : ytdGrowthPct >= 0 ? 'var(--green)' : 'var(--red)'
+
+            return (
+              <>
+                <div className="kpi-grid kpi-grid-5">
+                  <div className="kpi-card">
+                    <div className="kpi-label">Total Assets</div>
+                    <div className="kpi-value" style={{ color: 'var(--accent)', fontSize: 22 }}>{fmtMoney(data.total_assets)}</div>
+                    <div className="kpi-sub" style={{ color: hasTotalAssetsPrev ? (totalAssetsDelta >= 0 ? 'var(--green)' : 'var(--red)') : undefined }}>
+                      {hasTotalAssetsPrev ? `${fmtDelta(totalAssetsDelta)} vs prior period` : scopeLabel}
+                    </div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">Liquid Assets</div>
+                    <div className="kpi-value" style={{ color: 'var(--accent)', fontSize: 22 }}>{fmtMoney(data.liquid_assets)}</div>
+                    <div className="kpi-sub" style={{ color: hasLiquidPrev ? (liquidDelta >= 0 ? 'var(--green)' : 'var(--red)') : undefined }}>
+                      {hasLiquidPrev ? `${fmtDelta(liquidDelta)} vs prior period` : 'cash + investments'}
+                    </div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">Tax Advantaged</div>
+                    <div className="kpi-value" style={{ color: 'var(--accent)', fontSize: 22 }}>{fmtMoney(data.tax_advantaged)}</div>
+                    <div className="kpi-sub" style={{ color: hasTaxAdvPrev ? (taxAdvDelta >= 0 ? 'var(--green)' : 'var(--red)') : undefined }}>
+                      {hasTaxAdvPrev ? `${fmtDelta(taxAdvDelta)} vs prior period` : 'retirement accounts'}
+                    </div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">Period Growth <span style={{ opacity: 0.6 }}>ex. house</span></div>
+                    <div className="kpi-value" style={{ color: growthColor, fontSize: 22 }}>
+                      {popGrowthPct == null ? '—' : `${popGrowthPct >= 0 ? '+' : ''}${popGrowthPct.toFixed(1)}%`}
+                    </div>
+                    <div className="kpi-sub" style={{ color: popGrowthDelta != null ? growthColor : undefined }}>
+                      {popGrowthDelta != null
+                        ? `${fmtDelta(popGrowthDelta)} · ${periodLabels[periodLabels.length - 2]} → ${periodLabels[periodLabels.length - 1]}`
+                        : 'needs 2 periods'}
+                    </div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">YTD Growth <span style={{ opacity: 0.6 }}>ex. house</span></div>
+                    <div className="kpi-value" style={{ color: ytdColor, fontSize: 22 }}>
+                      {ytdGrowthPct == null ? '—' : `${ytdGrowthPct >= 0 ? '+' : ''}${ytdGrowthPct.toFixed(1)}%`}
+                    </div>
+                    <div className="kpi-sub" style={{ color: ytdDelta != null ? ytdColor : undefined }}>
+                      {ytdDelta != null && baselineIdx >= 0
+                        ? `${fmtDelta(ytdDelta)} · ${periodLabels[baselineIdx]} → ${latestLabel}`
+                        : 'needs prior year'}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card mt-16">
+                  <div className="card-hd"><div><div className="card-title">Asset Growth</div><div className="card-sub">total assets per closed period</div></div></div>
+                  <div className="card-bd" style={{ padding: '16px 20px' }}>
+                    {periodLabels.length
+                      ? <div style={{ height: 220 }}><canvas ref={assetGrowthRef} /></div>
+                      : <EmptyState message="No asset data yet." hint="Close a period to see asset growth." />}
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 16, marginTop: 16 }}>
+                  <div className="card">
+                    <div className="card-hd"><div><div className="card-title">Asset Mix</div><div className="card-sub">current snapshot · {scopeLabel}</div></div></div>
+                    <div className="card-bd" style={{ padding: '16px 20px' }}>
+                      {composition.length
+                        ? <div style={{ height: 240 }}><canvas ref={assetMixRef} /></div>
+                        : <EmptyState message="No assets yet." />}
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="card-hd"><div><div className="card-title">Composition Over Time</div><div className="card-sub">by sub-category · closed periods</div></div></div>
+                    <div className="card-bd" style={{ padding: '16px 20px' }}>
+                      {data.asset_series.length
+                        ? <div style={{ height: 240 }}><canvas ref={assetStackRef} /></div>
+                        : <EmptyState message="No asset data yet." hint="Close a period to see composition trend." />}
+                    </div>
+                  </div>
+                </div>
               </>
             )
           })()}
