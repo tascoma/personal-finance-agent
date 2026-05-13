@@ -51,6 +51,17 @@ class ExpenseCategorySeriesPoint(BaseModel):
     amount: str
 
 
+class AssetCompositionPoint(BaseModel):
+    sub_category: str
+    amount: str
+
+
+class AssetSeriesPoint(BaseModel):
+    period_label: str
+    sub_category: str
+    amount: str
+
+
 class RecentEntryPoint(BaseModel):
     description: str
     entry_date: str
@@ -64,6 +75,7 @@ class DashboardResponse(BaseModel):
     total_expenses: str
     net_income: str
     total_assets: str
+    total_assets_prev: str
     total_liabilities: str
     net_worth: str
     investing_cashflow: str
@@ -71,12 +83,18 @@ class DashboardResponse(BaseModel):
     retirement_contributions: str
     compensation_income: str
     lifestyle_expenses: str
+    liquid_assets: str
+    liquid_assets_prev: str
+    tax_advantaged: str
+    tax_advantaged_prev: str
     period_count: int
     has_data: bool
     period_bars: list[PeriodBarPoint]
     net_worth_series: list[NetWorthPoint]
     top_expense_categories: list[ExpenseCategoryPoint]
     expense_category_series: list[ExpenseCategorySeriesPoint]
+    asset_composition: list[AssetCompositionPoint]
+    asset_series: list[AssetSeriesPoint]
     recent_entries: list[RecentEntryPoint]
     active_period: Optional[PeriodRead]
 
