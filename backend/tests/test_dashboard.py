@@ -246,6 +246,117 @@ async def test_dashboard_lifestyle_and_category_series(
     assert all(row["period_label"] == "Feb 2026" for row in series)
 
 
+@pytest_asyncio.fixture
+async def two_closed_periods_with_assets(session_factory):
+    """Seed two closed periods with Cash + Brokerage assets and one memo asset.
+
+    Period 1 (Jan 2026): +1000 Cash, +500 Brokerage, +200 memo.
+    Period 2 (Feb 2026): +300 Cash, +700 Brokerage.
+
+    Memo asset should never appear in asset_composition or asset_series.
+    """
+    async with session_factory() as session:
+        p1 = Period(
+            period_start=date(2026, 1, 1),
+            period_end=date(2026, 1, 31),
+            status="closed",
+            closed_at=datetime(2026, 2, 1),
+        )
+        p2 = Period(
+            period_start=date(2026, 2, 1),
+            period_end=date(2026, 2, 28),
+            status="closed",
+            closed_at=datetime(2026, 3, 1),
+        )
+        session.add_all([p1, p2])
+        session.add_all([
+            Account(account_code=100101, account_name="Checking", account_type="Asset",
+                    sub_category="Cash", normal_balance="debit", is_memo=False, is_active=True),
+            Account(account_code=111101, account_name="Brokerage", account_type="Asset",
+                    sub_category="Brokerage", normal_balance="debit", is_memo=False, is_active=True),
+            Account(account_code=199101, account_name="Future Vehicle", account_type="Asset",
+                    sub_category="Memo Vehicles", normal_balance="debit", is_memo=True, is_active=True),
+            Account(account_code=300101, account_name="Opening Equity", account_type="Equity",
+                    sub_category="Equity", normal_balance="credit", is_memo=False, is_active=True),
+        ])
+        await session.flush()
+
+        def add_entry(period_id, entry_date, lines):
+            entry = JournalEntry(
+                entry_id=uuid.uuid4(),
+                period_id=period_id,
+                entry_date=entry_date,
+                description="seed",
+                source_type="manual",
+            )
+            session.add(entry)
+            return entry
+
+        e1 = add_entry(p1.period_id, date(2026, 1, 15), None)
+        e2 = add_entry(p2.period_id, date(2026, 2, 15), None)
+        await session.flush()
+
+        session.add_all([
+            # Period 1 — Cash +1000, Brokerage +500, Memo +200 (offset by Equity)
+            JournalLine(line_id=uuid.uuid4(), entry_id=e1.entry_id,
+                        account_code=100101, debit_amount=Decimal("1000"), credit_amount=Decimal("0")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=e1.entry_id,
+                        account_code=111101, debit_amount=Decimal("500"), credit_amount=Decimal("0")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=e1.entry_id,
+                        account_code=199101, debit_amount=Decimal("200"), credit_amount=Decimal("0")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=e1.entry_id,
+                        account_code=300101, debit_amount=Decimal("0"), credit_amount=Decimal("1700")),
+            # Period 2 — Cash +300, Brokerage +700 (offset by Equity)
+            JournalLine(line_id=uuid.uuid4(), entry_id=e2.entry_id,
+                        account_code=100101, debit_amount=Decimal("300"), credit_amount=Decimal("0")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=e2.entry_id,
+                        account_code=111101, debit_amount=Decimal("700"), credit_amount=Decimal("0")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=e2.entry_id,
+                        account_code=300101, debit_amount=Decimal("0"), credit_amount=Decimal("1000")),
+        ])
+        await session.commit()
+        return p1.period_id, p2.period_id
+
+
+@pytest.mark.asyncio
+async def test_dashboard_asset_composition_excludes_memo(
+    client: AsyncClient, two_closed_periods_with_assets
+):
+    response = await client.get("/api/v1/dashboard")
+    assert response.status_code == 200
+    body = response.json()
+
+    comp = body["asset_composition"]
+    by_subcat = {row["sub_category"]: Decimal(row["amount"]) for row in comp}
+
+    # Cumulative through Feb: Cash 1300, Brokerage 1200.
+    assert by_subcat == {
+        "Cash": Decimal("1300.00"),
+        "Brokerage": Decimal("1200.00"),
+    }
+    assert "Memo Vehicles" not in by_subcat
+    # Sorted descending by amount.
+    assert comp[0]["sub_category"] == "Cash"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_asset_series_per_period_per_subcat(
+    client: AsyncClient, two_closed_periods_with_assets
+):
+    response = await client.get("/api/v1/dashboard")
+    body = response.json()
+
+    series = body["asset_series"]
+    # Two periods × two non-memo sub_categories = 4 points; memo excluded.
+    assert len(series) == 4
+    indexed = {(r["period_label"], r["sub_category"]): Decimal(r["amount"]) for r in series}
+    assert indexed[("Jan 2026", "Cash")] == Decimal("1000.00")
+    assert indexed[("Jan 2026", "Brokerage")] == Decimal("500.00")
+    assert indexed[("Feb 2026", "Cash")] == Decimal("1300.00")
+    assert indexed[("Feb 2026", "Brokerage")] == Decimal("1200.00")
+    assert not any(r["sub_category"] == "Memo Vehicles" for r in series)
+
+
 @pytest.mark.asyncio
 async def test_dashboard_requires_auth():
     transport = ASGITransport(app=app)
