@@ -862,9 +862,9 @@ export default function DashboardPage() {
 
             const periodLabels = [...new Set(data.asset_series.map((p) => p.period_label))]
 
-            // Growth KPIs exclude the house (Real Estate) so they reflect
-            // liquid/investable asset growth rather than home-value appreciation.
-            const GROWTH_EXCLUDED = new Set(['Real Estate'])
+            // Growth KPIs exclude house, cash, and restricted cash so they reflect
+            // invested-asset growth rather than home-value or cash-balance shifts.
+            const GROWTH_EXCLUDED = new Set(['Real Estate', 'Cash & Cash Equivalents', 'Restricted Cash'])
             const growthTotalsByPeriod = periodLabels.map((pl) =>
               data.asset_series
                 .filter((r) => r.period_label === pl && !GROWTH_EXCLUDED.has(r.sub_category))
@@ -902,21 +902,21 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="kpi-card">
-                    <div className="kpi-label">Liquid Assets</div>
+                    <div className="kpi-label">Liquid Assets <span style={{ opacity: 0.6 }}>inc. cash and investments</span></div>
                     <div className="kpi-value" style={{ color: 'var(--accent)', fontSize: 22 }}>{fmtMoney(data.liquid_assets)}</div>
                     <div className="kpi-sub" style={{ color: hasLiquidPrev ? (liquidDelta >= 0 ? 'var(--green)' : 'var(--red)') : undefined }}>
-                      {hasLiquidPrev ? `${fmtDelta(liquidDelta)} vs prior period` : 'cash + investments'}
+                      {hasLiquidPrev ? `${fmtDelta(liquidDelta)} vs prior period` : scopeLabel}
                     </div>
                   </div>
                   <div className="kpi-card">
-                    <div className="kpi-label">Tax Advantaged</div>
+                    <div className="kpi-label">Tax Advantaged <span style={{ opacity: 0.6 }}>inc. Roth IRA, 401k, HSA</span></div>
                     <div className="kpi-value" style={{ color: 'var(--accent)', fontSize: 22 }}>{fmtMoney(data.tax_advantaged)}</div>
                     <div className="kpi-sub" style={{ color: hasTaxAdvPrev ? (taxAdvDelta >= 0 ? 'var(--green)' : 'var(--red)') : undefined }}>
                       {hasTaxAdvPrev ? `${fmtDelta(taxAdvDelta)} vs prior period` : 'retirement accounts'}
                     </div>
                   </div>
                   <div className="kpi-card">
-                    <div className="kpi-label">Period Growth <span style={{ opacity: 0.6 }}>ex. house</span></div>
+                    <div className="kpi-label">Period Growth <span style={{ opacity: 0.6 }}>ex. house & cash</span></div>
                     <div className="kpi-value" style={{ color: growthColor, fontSize: 22 }}>
                       {popGrowthPct == null ? '—' : `${popGrowthPct >= 0 ? '+' : ''}${popGrowthPct.toFixed(1)}%`}
                     </div>
@@ -927,7 +927,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="kpi-card">
-                    <div className="kpi-label">YTD Growth <span style={{ opacity: 0.6 }}>ex. house</span></div>
+                    <div className="kpi-label">YTD Growth <span style={{ opacity: 0.6 }}>ex. house & cash</span></div>
                     <div className="kpi-value" style={{ color: ytdColor, fontSize: 22 }}>
                       {ytdGrowthPct == null ? '—' : `${ytdGrowthPct >= 0 ? '+' : ''}${ytdGrowthPct.toFixed(1)}%`}
                     </div>
