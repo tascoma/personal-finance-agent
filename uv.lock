@@ -2011,7 +2011,7 @@ wheels = [
 ]
 
 [[package]]
-name = "personal-finance-agent"
+name = "personal-finance-ai"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

@@ -44,8 +44,11 @@ Practice project for building a full-stack web app with a FastAPI backend and Re
 
 External services this app depends on:
 
-- **GitHub** (`tascoma/personal-finance-agent`) — source of truth; push to `main` triggers Render auto-deploy
-- **Render** — hosts the web service (`srv-d7vngnlckfvc73eq4uq0`, region `oregon`) at https://personal-finance-agent-ipuu.onrender.com. Builds the multi-stage Dockerfile on every commit to `main`
+- **GitHub** (`tascoma/personal-finance-ai`) — source of truth. Pushes to `main` deploy to the prod Render service; pushes to `dev` deploy to the staging Render service.
+- **Render** — hosts two web services in region `oregon`, both built from the multi-stage Dockerfile:
+  - **Production** — `personal-finance-ai` (`srv-d7vngnlckfvc73eq4uq0`), tracks `main`, served at https://personal-finance-agent-ipuu.onrender.com (URL pre-dates the rename; Render hostnames don't change on rename).
+  - **Staging** — `personal-finance-ai-stage` (`srv-d81rnpfaqgkc73ctsad0`), tracks `dev`, served at https://personal-finance-agent-1-tqet.onrender.com.
+  - Both services currently share the same `pfa-db` Postgres instance.
 - **Supabase** — managed PostgreSQL accessed via `asyncpg`. Schema is owned by Alembic — never edit tables in the Supabase UI. Connection string lives in `DATABASE_URL` (use the Supabase transaction pooler URI on port 6543)
 - **Anthropic (Claude)** — LLM behind every Pydantic-AI agent in `app/agents/`. Requires `ANTHROPIC_API_KEY`. Default model is Claude Sonnet 4.6
 
@@ -73,7 +76,7 @@ git checkout dev && git pull           # delete the feature branch
 ## Project structure
 
 ```
-personal-finance-agent/
+personal-finance-ai/
 ├── backend/
 │   ├── alembic/                 # Alembic migration environment
 │   │   ├── env.py               # Async migration runner (reads settings.database_url)
