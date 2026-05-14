@@ -169,7 +169,7 @@ Post closing entries to zero out income and expense accounts and roll net income
 ## Project structure
 
 ```
-personal-finance-agent/
+personal-finance-ai/
 ├── backend/
 │   ├── alembic/                 # Alembic migration environment
 │   │   └── versions/            # Migration scripts
