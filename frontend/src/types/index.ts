@@ -360,3 +360,25 @@ export interface StatedBalanceItem {
   account_code: number
   stated_balance: string
 }
+
+// ── Orchestration ──────────────────────────────────────────────────
+
+export interface OrchestrationStepResult {
+  document_id: string
+  file_name: string
+  declared_type: string
+  resolved_type: string
+  reclassified: boolean
+  run_classifier: boolean
+  status: string
+  error: string | null
+}
+
+export interface OrchestrationResult {
+  period_id: string
+  parsed: number
+  failed: number
+  classifier_ran: boolean
+  classifier_updated: number
+  steps: OrchestrationStepResult[]
+}

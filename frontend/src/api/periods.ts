@@ -1,5 +1,6 @@
 import { del, get, post } from './client'
 import type {
+  OrchestrationResult,
   Period,
   PeriodCreate,
   PeriodDetailResponse,
@@ -36,6 +37,10 @@ export function deletePeriod(periodId: string): Promise<{ ok: boolean }> {
 
 export function parseAllDocuments(periodId: string): Promise<{ parsed: number; errors: string[] }> {
   return post<{ parsed: number; errors: string[] }>(`/periods/${periodId}/parse`)
+}
+
+export function orchestrateParse(periodId: string): Promise<OrchestrationResult> {
+  return post<OrchestrationResult>(`/periods/${periodId}/orchestrate-parse`)
 }
 
 export function saveBalances(periodId: string, balances: StatedBalanceItem[]): Promise<{ ok: boolean }> {
