@@ -22,9 +22,13 @@ A personal double-entry accounting system with an AI-powered document and transa
 
 External services this app depends on:
 
-- **GitHub** — source repository; pushes to `main` trigger Render auto-deploy
-- **Render** — runs the Dockerized web service in the `oregon` region; builds on every commit to `main`
-- **Supabase** — managed PostgreSQL accessed via `asyncpg`; schema managed by Alembic (not Supabase's UI). The connection string lives in `DATABASE_URL`
+- **GitHub** (`tascoma/personal-finance-ai`) — source repository. Pushes to `main` deploy to prod; pushes to `dev` deploy to staging.
+- **Render** — runs two Dockerized web services in the `oregon` region, each with its own `DATABASE_URL`:
+  - **Production** (`personal-finance-ai`) — tracks `main`, at https://personal-finance-agent-ipuu.onrender.com
+  - **Staging** (`personal-finance-ai-stage`) — tracks `dev`, at https://personal-finance-agent-1-tqet.onrender.com
+- **Supabase** — managed PostgreSQL accessed via `asyncpg`; schema managed by Alembic (not Supabase's UI). Two databases via Pro-plan branching:
+  - **Prod project** — the persistent main branch; the Render prod service and local `.env` connect here
+  - **Stage branch** — persistent, tied to git `dev`; the Render staging service connects here. Schema is promoted by merging `dev` → `main`
 - **Anthropic (Claude)** — LLM backing the Pydantic-AI agents under `app/agents/`; requires `ANTHROPIC_API_KEY`
 - **PyPI** (via `uv`), **npm registry**, and **Docker Hub / GHCR** — package and base-image sources used at build time
 
