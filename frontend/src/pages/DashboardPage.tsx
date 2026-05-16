@@ -23,7 +23,7 @@ import { fmtPeriod, fmtMoney } from '../utils/format'
 Chart.register(BarElement, LineElement, PointElement, ArcElement, BarController, LineController, DoughnutController, CategoryScale, LinearScale, Tooltip, Legend, Filler)
 
 
-type DashboardTab = 'overview' | 'insights' | 'assets'
+type DashboardTab = 'overview' | 'insights' | 'assets' | 'forecast'
 
 export default function DashboardPage() {
   const [fromPeriodId, setFromPeriodId] = useState<string | null>(null)
@@ -75,6 +75,73 @@ export default function DashboardPage() {
     placeholderData: keepPreviousData,
   })
 
+  const forecast = useMemo(() => {
+    if (!data?.net_worth_series?.length) return null
+    const histLabels = data.net_worth_series.map((p) => p.period_label)
+    const histVals = data.net_worth_series.map((p) => parseFloat(p.net_worth))
+    const n = histVals.length
+    const lastNw = histVals[n - 1]
+    const lastLabel = histLabels[n - 1]
+
+    const m = lastLabel.match(/^(\d{4})-(\d{2})$/)
+    if (!m) return null
+    const ly = parseInt(m[1], 10)
+    const lm = parseInt(m[2], 10)
+    const targetYear = 2026
+    const monthsRemaining = Math.max(0, (targetYear - ly) * 12 + (12 - lm))
+
+    const bars = data.period_bars.slice(-12)
+    const avgMonthlyNet = bars.length
+      ? bars.reduce((s, b) => s + parseFloat(b.net), 0) / bars.length
+      : 0
+
+    let slope = 0
+    let intercept = lastNw
+    if (n >= 2) {
+      const sumX = ((n - 1) * n) / 2
+      const sumY = histVals.reduce((s, y) => s + y, 0)
+      const sumXY = histVals.reduce((s, y, i) => s + i * y, 0)
+      const sumXX = histVals.reduce((s, _, i) => s + i * i, 0)
+      const denom = n * sumXX - sumX * sumX
+      if (denom !== 0) {
+        slope = (n * sumXY - sumX * sumY) / denom
+        intercept = (sumY - slope * sumX) / n
+      }
+    }
+
+    const futureLabels: string[] = []
+    for (let k = 1; k <= monthsRemaining; k++) {
+      const total = lm + k
+      const year = ly + Math.floor((total - 1) / 12)
+      const month = ((total - 1) % 12) + 1
+      futureLabels.push(`${year}-${String(month).padStart(2, '0')}`)
+    }
+
+    const trailingFuture = Array.from({ length: monthsRemaining }, (_, k) => lastNw + (k + 1) * avgMonthlyNet)
+    const regressionFuture = Array.from({ length: monthsRemaining }, (_, k) => intercept + slope * (n - 1 + k + 1))
+
+    const labels = [...histLabels, ...futureLabels]
+    const historical: (number | null)[] = [...histVals, ...futureLabels.map(() => null)]
+    const padNulls = histLabels.slice(0, -1).map(() => null) as (number | null)[]
+    const trailingProjection: (number | null)[] = [...padNulls, lastNw, ...trailingFuture]
+    const regressionProjection: (number | null)[] = n >= 2
+      ? [...padNulls, intercept + slope * (n - 1), ...regressionFuture]
+      : labels.map(() => null)
+
+    return {
+      monthsRemaining,
+      avgMonthlyNet,
+      slope,
+      currentNw: lastNw,
+      trailingEoy: trailingFuture.length ? trailingFuture[trailingFuture.length - 1] : lastNw,
+      regressionEoy: regressionFuture.length ? regressionFuture[regressionFuture.length - 1] : lastNw,
+      labels,
+      historical,
+      trailingProjection,
+      regressionProjection,
+    }
+  }, [data])
+
   const ieRef = useRef<HTMLCanvasElement>(null)
   const nwRef = useRef<HTMLCanvasElement>(null)
   const ecRef = useRef<HTMLCanvasElement>(null)
@@ -84,9 +151,11 @@ export default function DashboardPage() {
   const assetGrowthRef = useRef<HTMLCanvasElement>(null)
   const assetMixRef = useRef<HTMLCanvasElement>(null)
   const assetStackRef = useRef<HTMLCanvasElement>(null)
+  const forecastRef = useRef<HTMLCanvasElement>(null)
   const chartRefs = useRef<Chart[]>([])
   const trendChartRef = useRef<Chart | null>(null)
   const assetChartsRef = useRef<Chart[]>([])
+  const forecastChartRef = useRef<Chart | null>(null)
 
   useEffect(() => {
     if (!data) return
@@ -461,6 +530,75 @@ export default function DashboardPage() {
     return () => { assetChartsRef.current.forEach((c) => c.destroy()); assetChartsRef.current = [] }
   }, [data, activeTab])
 
+  useEffect(() => {
+    if (!data || activeTab !== 'forecast' || !forecast || !forecastRef.current) return
+
+    forecastChartRef.current?.destroy()
+
+    const isDark = document.documentElement.getAttribute('data-theme') !== 'light'
+    const text3  = isDark ? '#6a9bb8' : '#4a7a96'
+    const accent = isDark ? '#56c8f0' : '#0284c7'
+    const green  = isDark ? '#4ade80' : '#16a34a'
+    const red    = isDark ? '#f87171' : '#dc2626'
+
+    const moneyTick = (v: number | string) => `$${Number(v).toLocaleString()}`
+    const projColor = forecast.avgMonthlyNet >= 0 ? green : red
+
+    forecastChartRef.current = new Chart(forecastRef.current, {
+      type: 'line',
+      data: {
+        labels: forecast.labels,
+        datasets: [
+          {
+            label: 'Historical',
+            data: forecast.historical,
+            borderColor: accent,
+            backgroundColor: accent,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: accent,
+            tension: 0.3,
+            spanGaps: false,
+          },
+          {
+            label: 'Trailing-avg projection',
+            data: forecast.trailingProjection,
+            borderColor: projColor,
+            backgroundColor: projColor,
+            borderWidth: 2,
+            borderDash: [6, 4],
+            pointRadius: 2,
+            pointBackgroundColor: projColor,
+            tension: 0,
+            spanGaps: false,
+          },
+          {
+            label: 'Linear-regression projection',
+            data: forecast.regressionProjection,
+            borderColor: text3,
+            backgroundColor: text3,
+            borderWidth: 1.5,
+            borderDash: [3, 4],
+            pointRadius: 2,
+            pointBackgroundColor: text3,
+            tension: 0,
+            spanGaps: false,
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, font: { size: 11 } } },
+          tooltip: { callbacks: { label: (ctx) => ` ${ctx.dataset.label}: $${(ctx.parsed.y ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}` } },
+        },
+        scales: { x: { grid: { display: false } }, y: { ticks: { callback: moneyTick } } },
+      },
+    })
+
+    return () => { forecastChartRef.current?.destroy(); forecastChartRef.current = null }
+  }, [data, activeTab, forecast])
+
   if (isLoading && !data) return <Layout><p className="color-text3">Loading…</p></Layout>
   if (error || !data) return <Layout><p className="color-red">Failed to load dashboard.</p></Layout>
 
@@ -526,6 +664,7 @@ export default function DashboardPage() {
               { key: 'overview', label: 'Overview' },
               { key: 'insights', label: 'Expense Insights' },
               { key: 'assets', label: 'Asset Insights' },
+              { key: 'forecast', label: 'Forecast' },
             ]}
             active={activeTab}
             onChange={(k) => setActiveTab(k as DashboardTab)}
@@ -969,6 +1108,77 @@ export default function DashboardPage() {
               </>
             )
           })()}
+
+          {activeTab === 'forecast' && (
+            <>
+              {!forecast ? (
+                <div className="card">
+                  <EmptyState message="Not enough data to forecast." hint="Close at least one period to enable a projection." />
+                </div>
+              ) : (() => {
+                const gain = forecast.trailingEoy - forecast.currentNw
+                const gainPct = forecast.currentNw !== 0 ? (gain / forecast.currentNw) * 100 : 0
+                const gainColor = gain >= 0 ? 'var(--green)' : 'var(--red)'
+                const netColor = forecast.avgMonthlyNet >= 0 ? 'var(--green)' : 'var(--red)'
+                return (
+                  <>
+                    <div className="kpi-grid kpi-grid-6">
+                      <div className="kpi-card">
+                        <div className="kpi-label">Current Net Worth</div>
+                        <div className="kpi-value" style={{ color: 'var(--accent)', fontSize: 22 }}>{fmtMoney(String(forecast.currentNw))}</div>
+                        <div className="kpi-sub">latest closed period</div>
+                      </div>
+                      <div className="kpi-card">
+                        <div className="kpi-label">Projected EOY Net Worth</div>
+                        <div className="kpi-value" style={{ color: gainColor, fontSize: 22 }}>{fmtMoney(String(forecast.trailingEoy))}</div>
+                        <div className="kpi-sub">trailing-avg, Dec 2026</div>
+                      </div>
+                      <div className="kpi-card">
+                        <div className="kpi-label">Projected Gain</div>
+                        <div className="kpi-value" style={{ color: gainColor, fontSize: 22 }}>
+                          {gain >= 0 ? '+' : ''}{fmtMoney(String(gain))}
+                        </div>
+                        <div className="kpi-sub" style={{ color: gainColor }}>
+                          {gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}% over {forecast.monthsRemaining} mo
+                        </div>
+                      </div>
+                      <div className="kpi-card">
+                        <div className="kpi-label">Avg Monthly Net</div>
+                        <div className="kpi-value" style={{ color: netColor, fontSize: 22 }}>
+                          {forecast.avgMonthlyNet >= 0 ? '+' : ''}{fmtMoney(String(forecast.avgMonthlyNet))}
+                        </div>
+                        <div className="kpi-sub">trailing 12 periods</div>
+                      </div>
+                    </div>
+
+                    <div className="card mt-16">
+                      <div className="card-hd">
+                        <div>
+                          <div className="card-title">Net Worth Forecast</div>
+                          <div className="card-sub">historical · projected through Dec 2026</div>
+                        </div>
+                      </div>
+                      <div className="card-bd" style={{ padding: '16px 20px' }}>
+                        <div style={{ height: 280 }}><canvas ref={forecastRef} /></div>
+                      </div>
+                    </div>
+
+                    <div className="card mt-16">
+                      <div className="card-hd"><div><div className="card-title">Method</div><div className="card-sub">how these numbers are computed</div></div></div>
+                      <div className="card-bd" style={{ padding: '16px 20px', fontSize: 13, lineHeight: 1.6 }}>
+                        <p style={{ margin: '0 0 8px' }}>
+                          <strong>Trailing-avg projection:</strong> takes the average monthly net (income − expenses) over the last 12 closed periods and adds it to the latest net worth, one month at a time, through December 2026.
+                        </p>
+                        <p style={{ margin: 0 }}>
+                          <strong>Linear-regression projection:</strong> fits a least-squares line to the historical net-worth series and extrapolates to December 2026. Useful as a sanity check against the trailing-avg projection.
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )
+              })()}
+            </>
+          )}
         </>
       )}
       </div>
