@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { fetchPeriodDetail, updatePeriodStatus, stepBackPeriod, reopenPeriod, deletePeriod, parseAllDocuments, saveBalances } from '../api/periods'
+import { fetchPeriodDetail, updatePeriodStatus, stepBackPeriod, reopenPeriod, deletePeriod, orchestrateParse, saveBalances } from '../api/periods'
 import { uploadDocument, deleteDocument, parseDocument, unpostDocument, setDocumentSourceAccount } from '../api/documents'
 import { addManualTransactions, clearAllTransactions } from '../api/transactions'
 import Layout from '../components/Layout'
@@ -12,7 +12,7 @@ import Banner from '../components/Banner'
 import EmptyState from '../components/EmptyState'
 import SvgIcon from '../components/SvgIcon'
 import { fmtPeriod, fmtStatus } from '../utils/format'
-import type { StatedBalanceItem } from '../types'
+import type { OrchestrationResult, StatedBalanceItem } from '../types'
 
 const DOC_TYPES = [
   { value: 'paystub', label: 'Paystub' },
@@ -35,10 +35,12 @@ export default function PeriodDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [docType, setDocType] = useState('paystub')
   const [sourceAcct, setSourceAcct] = useState('')
-  const [fileName, setFileName] = useState('Choose file (.pdf, .csv, .xlsx)')
+  const PICK_LABEL = 'Choose files (.pdf, .csv, .xlsx)'
+  const [pickedFiles, setPickedFiles] = useState<File[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
   const [balances, setBalances] = useState<Record<number, string>>({})
   const [balancesInitialized, setBalancesInitialized] = useState(false)
+  const [orchestrationResult, setOrchestrationResult] = useState<OrchestrationResult | null>(null)
 
   // Manual transaction row state
   const [txnRows, setTxnRows] = useState([{ date: '', desc: '', amount: '', acct: '' }])
@@ -67,8 +69,20 @@ export default function PeriodDetailPage() {
   const canEdit = period ? EDITABLE(period.status) : false
 
   const upload = useMutation({
-    mutationFn: (fd: FormData) => uploadDocument(periodId!, fd),
-    onSuccess: () => { invalidate(); setFileName('Choose file (.pdf, .csv, .xlsx)'); if (fileRef.current) fileRef.current.value = '' },
+    mutationFn: async (files: File[]) => {
+      for (const f of files) {
+        const fd = new FormData()
+        fd.append('file', f)
+        fd.append('document_type', docType)
+        if (sourceAcct) fd.append('source_account_code', sourceAcct)
+        await uploadDocument(periodId!, fd)
+      }
+    },
+    onSuccess: () => {
+      invalidate()
+      setPickedFiles([])
+      if (fileRef.current) fileRef.current.value = ''
+    },
     onError: (e: Error) => setError(e.message),
   })
 
@@ -97,8 +111,8 @@ export default function PeriodDetailPage() {
   })
 
   const parseAll = useMutation({
-    mutationFn: () => parseAllDocuments(periodId!),
-    onSuccess: invalidate,
+    mutationFn: () => orchestrateParse(periodId!),
+    onSuccess: (result) => { setOrchestrationResult(result); invalidate() },
     onError: (e: Error) => setError(e.message),
   })
 
@@ -153,13 +167,8 @@ export default function PeriodDetailPage() {
   })
 
   function handleUpload() {
-    const f = fileRef.current?.files?.[0]
-    if (!f) return
-    const fd = new FormData()
-    fd.append('file', f)
-    fd.append('document_type', docType)
-    if (sourceAcct) fd.append('source_account_code', sourceAcct)
-    upload.mutate(fd)
+    if (pickedFiles.length === 0) return
+    upload.mutate(pickedFiles)
   }
 
   if (isLoading || !data) return <Layout><p className="color-text3">Loading…</p></Layout>
@@ -208,18 +217,25 @@ export default function PeriodDetailPage() {
                     <option value="">— source account —</option>
                     {accounts.map((a) => <option key={a.account_code} value={a.account_code}>{a.account_code} · {a.account_name}</option>)}
                   </select>
-                  <label className={`file-input-label${fileName !== 'Choose file (.pdf, .csv, .xlsx)' ? ' file-input-label--has-file' : ''}`}>
+                  <label className={`file-input-label${pickedFiles.length > 0 ? ' file-input-label--has-file' : ''}`}>
                     <SvgIcon name="upload" size={14} />
-                    <span>{fileName}</span>
+                    <span>
+                      {pickedFiles.length === 0
+                        ? PICK_LABEL
+                        : pickedFiles.length === 1
+                          ? pickedFiles[0].name
+                          : `${pickedFiles.length} files selected`}
+                    </span>
                     <input
                       ref={fileRef}
                       type="file"
+                      multiple
                       accept=".pdf,.csv,.xlsx"
-                      onChange={(e) => setFileName(e.target.files?.[0]?.name ?? 'Choose file (.pdf, .csv, .xlsx)')}
+                      onChange={(e) => setPickedFiles(Array.from(e.target.files ?? []))}
                     />
                   </label>
-                  <button className="btn btn-primary" disabled={upload.isPending} onClick={handleUpload}>
-                    {upload.isPending ? 'Uploading…' : 'Upload'}
+                  <button className="btn btn-primary" disabled={upload.isPending || pickedFiles.length === 0} onClick={handleUpload}>
+                    {upload.isPending ? 'Uploading…' : pickedFiles.length > 1 ? `Upload ${pickedFiles.length}` : 'Upload'}
                   </button>
                 </div>
               </div>
@@ -234,9 +250,9 @@ export default function PeriodDetailPage() {
               </div>
               <div className="card-hd-right">
                 {canEdit && has_pending_documents && (
-                  <button className="btn btn-secondary btn-sm" disabled={parseAll.isPending} onClick={() => parseAll.mutate()}>
+                  <button className="btn btn-secondary btn-sm" disabled={parseAll.isPending} onClick={() => { setOrchestrationResult(null); parseAll.mutate() }}>
                     {parseAll.isPending && <span className="spinner" style={{ marginRight: 6 }} />}
-                    {parseAll.isPending ? 'Parsing…' : 'Parse all pending'}
+                    {parseAll.isPending ? 'Parsing…' : 'Parse'}
                   </button>
                 )}
               </div>
@@ -316,6 +332,49 @@ export default function PeriodDetailPage() {
               </div>
             )}
           </div>
+
+          {orchestrationResult && (
+            <div className="card mt-16">
+              <div className="card-hd">
+                <div>
+                  <div className="card-title">Orchestration Result</div>
+                  <div className="card-sub">
+                    {orchestrationResult.parsed} parsed · {orchestrationResult.failed} failed
+                    {orchestrationResult.classifier_ran && ` · classifier updated ${orchestrationResult.classifier_updated}`}
+                  </div>
+                </div>
+                <div className="card-hd-right">
+                  <button className="btn btn-ghost btn-sm" onClick={() => setOrchestrationResult(null)}>Dismiss</button>
+                </div>
+              </div>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr><th>File</th><th>Declared → Resolved</th><th>Classifier</th><th>Status</th></tr>
+                  </thead>
+                  <tbody>
+                    {orchestrationResult.steps.map((s) => (
+                      <tr key={s.document_id}>
+                        <td style={{ fontSize: 13 }}>{s.file_name}</td>
+                        <td className="color-text2" style={{ fontSize: 12.5 }}>
+                          {s.reclassified ? (
+                            <span><span className="color-text3">{s.declared_type.replace(/_/g, ' ')}</span> → <strong>{s.resolved_type.replace(/_/g, ' ')}</strong></span>
+                          ) : (
+                            <span>{s.resolved_type.replace(/_/g, ' ')}</span>
+                          )}
+                        </td>
+                        <td style={{ fontSize: 12.5 }}>{s.run_classifier ? 'yes' : '—'}</td>
+                        <td>
+                          <StatusBadge status={s.status} />
+                          {s.error && <div className="color-text3" style={{ fontSize: 11, marginTop: 2 }}>{s.error}</div>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {canEdit && (
             <div className="card mt-16">

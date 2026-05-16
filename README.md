@@ -158,13 +158,70 @@ Post closing entries to zero out income and expense accounts and roll net income
 
 ## AI agents
 
-| Agent | Purpose |
-|---|---|
-| **Statement Extractor** | Parses bank/credit card/investment statement PDFs; extracts date, description, and signed amount per transaction |
-| **Paystub Extractor** | Extracts payroll line items (earnings, deductions, taxes, net pay) from paystub PDFs |
-| **Mortgage Extractor** | Extracts principal, interest, escrow, property tax, and insurance amounts from mortgage statement PDFs |
-| **Transaction Classifier** | Assigns account codes with confidence scores; considers source account type for sign interpretation |
-| **Reconciliation Analyzer** | Identifies likely causes of reconciliation gaps and suggests concrete remediation steps |
+The app uses a small set of focused Pydantic-AI agents (each = one prompt + one output schema, all sharing the factory in [`app/agents/_base.py`](backend/app/agents/_base.py)). An **Orchestrator** agent sits on top of the extraction agents and decides per-document which sub-agent should run.
+
+| Agent | Role | When it runs |
+|---|---|---|
+| **Orchestrator** | Reads a digest (filename + declared type + a short content peek) for every pending document and returns a routing plan — the resolved type for each document and whether classification should follow | Once per "Parse" click |
+| **Statement Extractor** | Extracts date, description, and signed amount per transaction from bank / credit-card / investment statement PDFs | Per document, when orchestrator routes there |
+| **Paystub Extractor** | Extracts payroll line items (earnings, deductions, taxes, net pay) from paystub PDFs | Per document, when orchestrator routes there |
+| **Mortgage Extractor** | Extracts principal, interest, escrow, property tax, and insurance amounts from mortgage statement PDFs | Per document, when orchestrator routes there |
+| **Transaction Classifier** | Assigns chart-of-accounts codes with confidence scores; considers source account type for sign interpretation | Once per period after extraction, only if any document required classification |
+| **Reconciliation Analyzer** | Identifies likely causes of reconciliation gaps and suggests remediation steps | Reconciliation phase, separate from parse |
+
+### How they work together
+
+The Orchestrator follows a **plan-then-execute** pattern. One LLM call decides routing for the entire batch; deterministic Python then invokes the existing extractors and classifier based on that plan. This keeps the LLM in charge of *delegation* while extraction itself stays in well-tested code paths.
+
+Agents (LLM-backed) are drawn with the double-rectangle `[[ ]]` shape; everything else is deterministic Python.
+
+```mermaid
+flowchart TD
+    User([User])
+    Upload[Upload N documents<br/>multi-file picker]
+    Click{{Click Parse}}
+    Route["POST /periods/:id/orchestrate-parse"]
+    Digest["Build per-document digest<br/>filename, declared type, content peek"]
+    Orch[["Orchestrator Agent<br/>1 LLM call for whole batch"]]
+    Plan["OrchestrationPlan<br/>resolved_type + run_classifier per doc"]
+    Correct["Persist document_type corrections<br/>declared ≠ resolved"]
+
+    Stmt[["Statement Extractor"]]
+    Pay[["Paystub Extractor"]]
+    Mort[["Mortgage Extractor"]]
+    Det["Deterministic CSV/XLSX mapper<br/>no LLM"]
+
+    NeedClass{Any step<br/>requested<br/>classification?}
+    Class[["Transaction Classifier<br/>runs once for the period"]]
+
+    Staged[(Raw transactions<br/>status=staged)]
+    Final[(Suggested account codes<br/>+ confidence)]
+    Done([Done])
+
+    User --> Upload --> Click --> Route --> Digest --> Orch --> Plan --> Correct
+    Correct -->|paystub| Pay
+    Correct -->|mortgage_statement| Mort
+    Correct -->|bank/credit/investment .pdf| Stmt
+    Correct -->|bank/credit/investment .csv or .xlsx| Det
+
+    Pay --> Staged
+    Mort --> Staged
+    Stmt --> Staged
+    Det --> Staged
+
+    Staged --> NeedClass
+    NeedClass -->|yes| Class --> Final --> Done
+    NeedClass -->|no| Done
+```
+
+Walk-through of one "Parse" click:
+
+1. **Digest build** — the orchestrate service reads each pending document and extracts a small peek: ~800 characters for PDFs, ~10 rows for CSV/XLSX. The full file is never sent to the orchestrator.
+2. **Single orchestrator call** — one LLM call with the batch of digests returns an `OrchestrationPlan` covering every document. The orchestrator is free to *override* the user's declared `document_type` when the content disagrees (e.g. a paystub mistakenly uploaded as a bank statement).
+3. **Type correction is persisted** — if the orchestrator's `resolved_type` differs from the declared one, the `Document.document_type` column is updated before extraction runs.
+4. **Per-document extraction** — the service calls the existing `parse_document` flow, which dispatches to the right extractor agent (or a deterministic CSV/XLSX mapper) based on the resolved type and file extension. A failure on one document does not abort the others.
+5. **Optional classification** — if any planned step set `run_classifier=true` (true only for bank/credit-card documents) and at least one document parsed successfully, the Transaction Classifier runs once for the period to assign suggested account codes and confidence scores.
+6. **Result** — the endpoint returns an `OrchestrationResult` with per-document outcomes (declared type, resolved type, whether reclassified, success/error) plus aggregate counts for the UI to display.
 
 ## Project structure
 
