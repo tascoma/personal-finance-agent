@@ -85,6 +85,24 @@ async def test_upload_pdf_success(client: AsyncClient, session_factory, open_per
 
 
 @pytest.mark.asyncio
+async def test_upload_without_document_type_defaults_to_unknown(
+    client: AsyncClient, session_factory, open_period
+):
+    """When the client omits document_type, the upload should still succeed
+    with document_type='unknown' so the orchestrator can classify it later."""
+    files = {"file": ("statement.pdf", BytesIO(b"%PDF-1.4 dummy"), "application/pdf")}
+    response = await client.post(
+        f"/api/v1/periods/{open_period.period_id}/documents",
+        files=files,
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["document_type"] == "unknown"
+    assert body["source_account_code"] is None
+    assert body["parse_status"] == "pending"
+
+
+@pytest.mark.asyncio
 async def test_upload_mortgage_statement(client: AsyncClient, session_factory, open_period):
     files = {"file": ("mortgage.pdf", BytesIO(b"%PDF-1.4 dummy"), "application/pdf")}
     data = {"document_type": "mortgage_statement"}

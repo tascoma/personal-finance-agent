@@ -21,18 +21,18 @@ router = APIRouter(tags=["documents"], dependencies=[Depends(get_current_user)])
 @router.post("/periods/{period_id}/documents", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     period_id: uuid.UUID,
-    document_type: str = Form(...),
-    source_account_code: int | None = Form(None),
     file: UploadFile = File(...),
+    document_type: str = Form("unknown"),
+    source_account_code: int | None = Form(None),
     db: AsyncSession = Depends(get_db_session),
 ) -> DocumentRead:
     try:
         doc = await document_service.save_upload(
             db,
             period_id=period_id,
+            upload=file,
             document_type=document_type,
             source_account_code=source_account_code,
-            upload=file,
         )
     except document_service.DocumentError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
