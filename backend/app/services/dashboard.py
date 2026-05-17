@@ -57,6 +57,13 @@ class AssetSeriesPoint:
 
 
 @dataclass
+class RetirementContributionPoint:
+    account_code: int
+    account_name: str
+    amount: float
+
+
+@dataclass
 class RecentEntry:
     description: str
     entry_date: str
@@ -92,6 +99,8 @@ class DashboardData:
     tax_advantaged: Decimal
     tax_advantaged_prev: Decimal
     total_assets_prev: Decimal
+    ytd_year: Optional[int]
+    ytd_retirement_contributions: list[RetirementContributionPoint]
 
 
 def _sum_by_type(
@@ -272,6 +281,37 @@ async def compute_dashboard(
         _ZERO,
     )
 
+    # YTD per-account retirement contributions, scoped to the calendar year of the
+    # most recent closed period (matches the existing YTD-growth pattern on the
+    # frontend). Independent of the user's period filter so the contribution
+    # progress bars always reflect the current year.
+    ytd_year: Optional[int] = (
+        max(p.period_start.year for p in all_closed_periods) if all_closed_periods else None
+    )
+    ytd_contribs_by_code: dict[int, Decimal] = defaultdict(lambda: _ZERO)
+    if ytd_year is not None:
+        ytd_period_ids = {p.period_id for p in all_closed_periods if p.period_start.year == ytd_year}
+        ytd_lines_by_entry: dict = defaultdict(list)
+        for line, pid, entry_id, is_closing in all_rows:
+            if pid in ytd_period_ids and not is_closing:
+                ytd_lines_by_entry[entry_id].append(line)
+        for entry_lines in ytd_lines_by_entry.values():
+            if not any(ln.account_code in cash_codes for ln in entry_lines):
+                continue
+            if any(accounts.get(ln.account_code) and accounts[ln.account_code].account_type == "Equity" for ln in entry_lines):
+                continue
+            for ln in entry_lines:
+                if ln.account_code in _RETIREMENT_CODES:
+                    ytd_contribs_by_code[ln.account_code] += ln.debit_amount - ln.credit_amount
+    ytd_retirement_contributions = [
+        RetirementContributionPoint(
+            account_code=code,
+            account_name=accounts[code].account_name if code in accounts else str(code),
+            amount=float(ytd_contribs_by_code.get(code, _ZERO)),
+        )
+        for code in sorted(_RETIREMENT_CODES)
+    ]
+
     lifestyle_expenses = _ZERO
     for ln in lines_operating:
         acct = accounts.get(ln.account_code)
@@ -430,4 +470,6 @@ async def compute_dashboard(
         tax_advantaged=tax_advantaged,
         tax_advantaged_prev=tax_advantaged_prev,
         total_assets_prev=total_assets_prev_val,
+        ytd_year=ytd_year,
+        ytd_retirement_contributions=ytd_retirement_contributions,
     )

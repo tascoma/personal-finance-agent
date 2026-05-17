@@ -1105,6 +1105,104 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </div>
+
+                {data.ytd_retirement_contributions.length > 0 && (() => {
+                  const LIMITS: Record<number, number> = { 111101: 7500, 111102: 24500, 111103: 4400 }
+                  const SHORT_NAME: Record<number, string> = {
+                    111101: 'Roth IRA',
+                    111102: '401(k)',
+                    111103: 'HSA',
+                  }
+                  const ytdYear = data.ytd_year
+                  const today = new Date()
+                  const currentYear = today.getFullYear()
+                  // Fraction of the calendar year elapsed (used to color "on pace" vs "behind").
+                  // If the YTD year is in the past, treat the year as fully elapsed.
+                  let elapsedFrac = 1
+                  if (ytdYear != null && ytdYear >= currentYear) {
+                    const yearStart = new Date(ytdYear, 0, 1).getTime()
+                    const yearEnd = new Date(ytdYear + 1, 0, 1).getTime()
+                    const now = today.getTime()
+                    elapsedFrac = Math.max(0, Math.min(1, (now - yearStart) / (yearEnd - yearStart)))
+                  }
+                  return (
+                    <div className="card mt-16">
+                      <div className="card-hd">
+                        <div>
+                          <div className="card-title">Retirement Contributions</div>
+                          <div className="card-sub">
+                            year-to-date · {ytdYear ?? '—'} · {(elapsedFrac * 100).toFixed(0)}% of year elapsed
+                          </div>
+                        </div>
+                      </div>
+                      <div className="card-bd" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+                        {data.ytd_retirement_contributions.map((c) => {
+                          const limit = LIMITS[c.account_code] ?? 0
+                          const contributed = Math.max(0, parseFloat(c.amount))
+                          const pct = limit > 0 ? Math.min(100, (contributed / limit) * 100) : 0
+                          const remaining = Math.max(0, limit - contributed)
+                          const pace = limit > 0 ? (contributed / limit) / Math.max(elapsedFrac, 0.001) : 1
+                          const fillColor =
+                            contributed >= limit ? 'var(--green)'
+                            : pace >= 0.95 ? 'var(--green)'
+                            : pace >= 0.7 ? 'var(--amber, #b45309)'
+                            : 'var(--red)'
+                          const expectedPct = elapsedFrac * 100
+                          return (
+                            <div key={c.account_code}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6, gap: 12 }}>
+                                <div>
+                                  <span style={{ fontWeight: 600 }}>{SHORT_NAME[c.account_code] ?? c.account_name}</span>
+                                  <span className="color-text3" style={{ fontSize: 12, marginLeft: 8 }}>
+                                    {fmtMoney(String(contributed))} / {fmtMoney(String(limit))}
+                                  </span>
+                                </div>
+                                <div style={{ fontWeight: 600, color: fillColor, fontSize: 16 }}>{pct.toFixed(1)}%</div>
+                              </div>
+                              <div
+                                style={{
+                                  position: 'relative',
+                                  height: 10,
+                                  background: 'rgba(86,200,240,0.10)',
+                                  borderRadius: 6,
+                                  overflow: 'hidden',
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    width: `${pct}%`,
+                                    height: '100%',
+                                    background: fillColor,
+                                    transition: 'width 0.3s ease',
+                                  }}
+                                />
+                                {expectedPct > 0 && expectedPct < 100 && (
+                                  <div
+                                    title={`On-pace marker · ${expectedPct.toFixed(0)}%`}
+                                    style={{
+                                      position: 'absolute',
+                                      top: -2,
+                                      bottom: -2,
+                                      left: `${expectedPct}%`,
+                                      width: 2,
+                                      background: 'var(--text2, #a3c0d6)',
+                                      opacity: 0.6,
+                                    }}
+                                  />
+                                )}
+                              </div>
+                              <div className="color-text3" style={{ fontSize: 12, marginTop: 4 }}>
+                                {remaining > 0
+                                  ? `${fmtMoney(String(remaining))} left to hit the limit`
+                                  : 'Limit reached'}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })()}
               </>
             )
           })()}

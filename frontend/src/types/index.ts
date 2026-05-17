@@ -152,6 +152,12 @@ export interface AssetSeriesPoint {
   amount: string
 }
 
+export interface RetirementContributionPoint {
+  account_code: number
+  account_name: string
+  amount: string
+}
+
 export interface RecentEntryPoint {
   description: string
   entry_date: string
@@ -185,6 +191,8 @@ export interface DashboardResponse {
   expense_category_series: ExpenseCategorySeriesPoint[]
   asset_composition: AssetCompositionPoint[]
   asset_series: AssetSeriesPoint[]
+  ytd_year: number | null
+  ytd_retirement_contributions: RetirementContributionPoint[]
   recent_entries: RecentEntryPoint[]
   active_period: Period | null
 }

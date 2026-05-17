@@ -14,6 +14,7 @@ from app.schemas.api_responses import (
     NetWorthPoint,
     PeriodBarPoint,
     RecentEntryPoint,
+    RetirementContributionPoint,
 )
 from app.schemas.period import PeriodRead
 from app.services import dashboard as dashboard_service
@@ -96,6 +97,15 @@ async def get_dashboard(
                 amount=str(p.amount),
             )
             for p in data.asset_series
+        ],
+        ytd_year=data.ytd_year,
+        ytd_retirement_contributions=[
+            RetirementContributionPoint(
+                account_code=c.account_code,
+                account_name=c.account_name,
+                amount=str(c.amount),
+            )
+            for c in data.ytd_retirement_contributions
         ],
         recent_entries=[
             RecentEntryPoint(
