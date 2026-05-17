@@ -170,21 +170,32 @@ async def compute_dashboard(
     else:
         periods = all_periods
 
-    # Only closed periods contribute to any metric or chart.
+    # Only closed periods contribute to operating (income/expense) metrics, but
+    # balance-sheet cumulative state must also include any earlier still-open
+    # periods (e.g. an "opening balances" seed posted to a bootstrap month that
+    # was never formally closed). Without this, KPI totals like total_assets
+    # show just the latest period's net change instead of the running balance.
     all_closed_periods = [p for p in all_periods if p.status == "closed"]
     all_closed_ids = {p.period_id for p in all_closed_periods}
 
     closed_filter_periods = [p for p in periods if p.status == "closed"]
     filter_closed_ids = {p.period_id for p in closed_filter_periods}
 
-    # Balance-sheet figures are cumulative — use all closed periods up to and
+    if all_closed_periods:
+        max_closed_start = max(p.period_start for p in all_closed_periods)
+        bs_relevant_periods = [p for p in all_periods if p.period_start <= max_closed_start]
+    else:
+        bs_relevant_periods = []
+    bs_relevant_ids = {p.period_id for p in bs_relevant_periods}
+
+    # Balance-sheet figures are cumulative — use all bs-relevant periods up to and
     # including the last closed period in the filter selection so that
     # total_assets / net_worth reflect the actual balance, not just the period's change.
     if closed_filter_periods:
         max_filter_start = max(p.period_start for p in closed_filter_periods)
-        bs_period_ids = {p.period_id for p in all_closed_periods if p.period_start <= max_filter_start}
+        bs_period_ids = {p.period_id for p in bs_relevant_periods if p.period_start <= max_filter_start}
     else:
-        bs_period_ids = all_closed_ids
+        bs_period_ids = bs_relevant_ids
 
     rows = await db.execute(
         select(JournalLine, JournalEntry.period_id, JournalEntry.entry_id, JournalEntry.is_closing)
@@ -201,7 +212,7 @@ async def compute_dashboard(
     lines_operating_by_period: dict = defaultdict(list)
     lines_operating_by_entry: dict = defaultdict(list)
     for line, pid, entry_id, is_closing in all_rows:
-        if pid in all_closed_ids:
+        if pid in bs_relevant_ids:
             lines_bs_by_pid[pid].append(line)
         if pid in bs_period_ids:
             lines_bs_all.append(line)
@@ -285,7 +296,7 @@ async def compute_dashboard(
     tax_adv_filter_snapshots: list[Decimal] = []
     total_assets_filter_snapshots: list[Decimal] = []
 
-    for p in all_closed_periods:
+    for p in bs_relevant_periods:
         p_bs_lines = lines_bs_by_pid.get(p.period_id, [])
         running_assets += _sum_by_type(p_bs_lines, accounts, "Asset")
         running_liabilities += _sum_by_type(p_bs_lines, accounts, "Liability")

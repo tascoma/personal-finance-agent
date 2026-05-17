@@ -357,6 +357,84 @@ async def test_dashboard_asset_series_per_period_per_subcat(
     assert not any(r["sub_category"] == "Memo Vehicles" for r in series)
 
 
+@pytest_asyncio.fixture
+async def open_seed_then_closed_period(session_factory):
+    """Open seed period (Mar) with an opening-balance entry, then closed Apr.
+
+    Mar opening: Checking +5000 (debit), offset by Equity. Period left status='open'.
+    Apr closed: paycheck +3000 to Checking, no expenses.
+
+    The seed period is never formally closed, but its entries must still
+    roll into later cumulative balance-sheet figures.
+    """
+    async with session_factory() as session:
+        seed = Period(
+            period_start=date(2026, 3, 1),
+            period_end=date(2026, 3, 31),
+            status="open",
+        )
+        closed = Period(
+            period_start=date(2026, 4, 1),
+            period_end=date(2026, 4, 30),
+            status="closed",
+            closed_at=datetime(2026, 5, 1),
+        )
+        session.add_all([seed, closed])
+        session.add_all([
+            Account(account_code=100101, account_name="Checking", account_type="Asset",
+                    sub_category="Cash", normal_balance="debit", is_memo=False, is_active=True),
+            Account(account_code=400101, account_name="Salary", account_type="Income",
+                    sub_category="Earned", normal_balance="credit", is_memo=False, is_active=True),
+            Account(account_code=300101, account_name="Opening Equity", account_type="Equity",
+                    sub_category="Equity", normal_balance="credit", is_memo=False, is_active=True),
+        ])
+        await session.flush()
+
+        seed_entry = JournalEntry(
+            entry_id=uuid.uuid4(),
+            period_id=seed.period_id,
+            entry_date=date(2026, 3, 31),
+            description="Opening balances",
+            source_type="adjusting",
+        )
+        apr_entry = JournalEntry(
+            entry_id=uuid.uuid4(),
+            period_id=closed.period_id,
+            entry_date=date(2026, 4, 15),
+            description="Paycheck",
+            source_type="manual",
+        )
+        session.add_all([seed_entry, apr_entry])
+        await session.flush()
+
+        session.add_all([
+            JournalLine(line_id=uuid.uuid4(), entry_id=seed_entry.entry_id,
+                        account_code=100101, debit_amount=Decimal("5000"), credit_amount=Decimal("0")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=seed_entry.entry_id,
+                        account_code=300101, debit_amount=Decimal("0"), credit_amount=Decimal("5000")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=apr_entry.entry_id,
+                        account_code=100101, debit_amount=Decimal("3000"), credit_amount=Decimal("0")),
+            JournalLine(line_id=uuid.uuid4(), entry_id=apr_entry.entry_id,
+                        account_code=400101, debit_amount=Decimal("0"), credit_amount=Decimal("3000")),
+        ])
+        await session.commit()
+        return seed.period_id, closed.period_id
+
+
+@pytest.mark.asyncio
+async def test_dashboard_includes_open_seed_period_in_balance_sheet(
+    client: AsyncClient, open_seed_then_closed_period
+):
+    response = await client.get("/api/v1/dashboard")
+    body = response.json()
+
+    # Cumulative through Apr = 5000 (seed) + 3000 (paycheck) = 8000 Cash.
+    assert Decimal(body["total_assets"]) == Decimal("8000.00")
+    assert Decimal(body["liquid_assets"]) == Decimal("8000.00")
+    # Operating income for Apr stays scoped to Apr — seed doesn't pollute it.
+    assert Decimal(body["total_income"]) == Decimal("3000.00")
+
+
 @pytest.mark.asyncio
 async def test_dashboard_requires_auth():
     transport = ASGITransport(app=app)
