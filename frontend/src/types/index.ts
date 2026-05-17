@@ -366,11 +366,13 @@ export interface StatedBalanceItem {
 export interface OrchestrationStepResult {
   document_id: string
   file_name: string
-  declared_type: string
   resolved_type: string
-  reclassified: boolean
+  resolved_source_account_code: number | null
+  resolved_account_name: string | null
+  type_reason: string | null
+  source_account_reason: string | null
   run_classifier: boolean
-  status: string
+  status: 'complete' | 'failed' | 'needs_review'
   error: string | null
 }
 
@@ -378,6 +380,7 @@ export interface OrchestrationResult {
   period_id: string
   parsed: number
   failed: number
+  needs_review: number
   classifier_ran: boolean
   classifier_updated: number
   steps: OrchestrationStepResult[]

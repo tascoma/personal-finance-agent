@@ -198,13 +198,20 @@ async def orchestrate_parse_documents(
     try:
         result = await orchestrate_service.orchestrate_parse(db, period_id)
     except AgentError as exc:
-        logger.error("Orchestrator agent failed for period %s: %s", period_id, exc)
+        logger.exception("Orchestrator agent failed for period %s", period_id)
         raise HTTPException(status_code=502, detail="Orchestration agent failed") from exc
+    except Exception:
+        logger.exception("Unexpected error orchestrating period %s", period_id)
+        raise HTTPException(
+            status_code=500, detail="Unexpected error during orchestration"
+        )
     logger.info(
-        "Orchestrated parse for period %s: %d parsed, %d failed",
+        "Orchestrated parse for period %s: %d parsed, %d failed, %d need review, classifier_ran=%s",
         period_id,
         result.parsed,
         result.failed,
+        result.needs_review,
+        result.classifier_ran,
     )
     return result
 

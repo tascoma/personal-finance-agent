@@ -191,13 +191,17 @@ async def test_orchestrate_parses_all_pending_documents(
             DocumentPlan(
                 document_id=csv_bank_doc.document_id,
                 resolved_type="bank_statement",
-                reason="Bank checking activity.",
+                type_reason="Bank checking activity.",
+                resolved_source_account_code=100101,
+                source_account_reason="Checking account on statement.",
                 run_classifier=True,
             ),
             DocumentPlan(
                 document_id=xlsx_card_doc.document_id,
                 resolved_type="credit_card",
-                reason="Credit card transactions.",
+                type_reason="Credit card transactions.",
+                resolved_source_account_code=200101,
+                source_account_reason="Mastercard activity.",
                 run_classifier=True,
             ),
         ])),
@@ -237,7 +241,9 @@ async def test_orchestrate_corrects_wrong_document_type(
             DocumentPlan(
                 document_id=mislabeled_csv_doc.document_id,
                 resolved_type="bank_statement",  # correction
-                reason="Header shows Balance column typical of a checking account.",
+                type_reason="Header shows Balance column typical of a checking account.",
+                resolved_source_account_code=100101,
+                source_account_reason="Checking account.",
                 run_classifier=True,
             ),
         ])),
@@ -252,9 +258,8 @@ async def test_orchestrate_corrects_wrong_document_type(
         result = await orchestrate_service.orchestrate_parse(session, open_period.period_id)
 
     assert result.parsed == 1
-    assert result.steps[0].reclassified is True
-    assert result.steps[0].declared_type == "credit_card"
     assert result.steps[0].resolved_type == "bank_statement"
+    assert result.steps[0].resolved_source_account_code == 100101
 
     async with session_factory() as session:
         doc = await session.get(Document, mislabeled_csv_doc.document_id)
@@ -296,7 +301,9 @@ async def test_orchestrate_skips_classifier_when_no_bank_or_credit(
             DocumentPlan(
                 document_id=doc.document_id,
                 resolved_type="paystub",
-                reason="Paystub format.",
+                type_reason="Paystub format.",
+                resolved_source_account_code=100101,
+                source_account_reason="Net pay deposited to checking.",
                 run_classifier=False,
             ),
         ])),
@@ -357,14 +364,18 @@ async def test_orchestrate_one_failure_does_not_block_others(
             DocumentPlan(
                 document_id=csv_bank_doc.document_id,
                 resolved_type="bank_statement",
-                reason="ok",
+                type_reason="ok",
+                resolved_source_account_code=100101,
+                source_account_reason="Checking account.",
                 run_classifier=False,
             ),
             DocumentPlan(
                 document_id=bad.document_id,
                 # Force a path that mismatches the file: paystub requires .pdf
                 resolved_type="paystub",
-                reason="(forced bad route to trigger failure)",
+                type_reason="(forced bad route to trigger failure)",
+                resolved_source_account_code=100101,
+                source_account_reason="Checking account.",
                 run_classifier=False,
             ),
         ])),
@@ -378,6 +389,47 @@ async def test_orchestrate_one_failure_does_not_block_others(
     statuses = {s.document_id: s.status for s in result.steps}
     assert statuses[csv_bank_doc.document_id] == "complete"
     assert statuses[bad.document_id] == "failed"
+
+
+@pytest.mark.asyncio
+async def test_orchestrate_unresolved_source_account_is_needs_review(
+    session_factory, csv_bank_doc, open_period, monkeypatch
+):
+    """When the orchestrator can't match a source account, the step should be
+    reported as needs_review and the document should remain at parse_status=pending
+    so the user can assign an account and click Parse on that row."""
+    monkeypatch.setattr(
+        "app.services.orchestrate.run_orchestrator",
+        AsyncMock(return_value=OrchestrationPlan(steps=[
+            DocumentPlan(
+                document_id=csv_bank_doc.document_id,
+                resolved_type="bank_statement",
+                type_reason="ok",
+                resolved_source_account_code=None,
+                source_account_reason="No account name or last-4 found in content.",
+                run_classifier=True,
+            ),
+        ])),
+    )
+    classifier_mock = AsyncMock(return_value=0)
+    monkeypatch.setattr(classify_service, "classify_period", classifier_mock)
+
+    async with session_factory() as session:
+        result = await orchestrate_service.orchestrate_parse(session, open_period.period_id)
+
+    assert result.parsed == 0
+    assert result.failed == 0
+    assert result.needs_review == 1
+    assert result.classifier_ran is False
+    assert len(result.steps) == 1
+    step = result.steps[0]
+    assert step.status == "needs_review"
+    assert step.resolved_source_account_code is None
+    classifier_mock.assert_not_awaited()
+
+    async with session_factory() as session:
+        doc = await session.get(Document, csv_bank_doc.document_id)
+    assert doc.parse_status == "pending"
 
 
 @pytest.mark.asyncio
@@ -409,7 +461,9 @@ async def test_route_returns_orchestration_result(
             DocumentPlan(
                 document_id=csv_bank_doc.document_id,
                 resolved_type="bank_statement",
-                reason="ok",
+                type_reason="ok",
+                resolved_source_account_code=100101,
+                source_account_reason="Checking account.",
                 run_classifier=False,
             ),
         ])),
