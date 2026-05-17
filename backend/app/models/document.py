@@ -12,7 +12,7 @@ class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (
         CheckConstraint(
-            "document_type IN ('paystub', 'bank_statement', 'credit_card', 'investment', 'mortgage_statement', 'manual', 'opening_balances')",
+            "document_type IN ('paystub', 'bank_statement', 'credit_card', 'investment', 'mortgage_statement', 'manual', 'opening_balances', 'unknown')",
             name="ck_document_type",
         ),
         CheckConstraint(

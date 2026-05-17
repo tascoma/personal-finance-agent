@@ -152,6 +152,12 @@ export interface AssetSeriesPoint {
   amount: string
 }
 
+export interface RetirementContributionPoint {
+  account_code: number
+  account_name: string
+  amount: string
+}
+
 export interface RecentEntryPoint {
   description: string
   entry_date: string
@@ -185,6 +191,8 @@ export interface DashboardResponse {
   expense_category_series: ExpenseCategorySeriesPoint[]
   asset_composition: AssetCompositionPoint[]
   asset_series: AssetSeriesPoint[]
+  ytd_year: number | null
+  ytd_retirement_contributions: RetirementContributionPoint[]
   recent_entries: RecentEntryPoint[]
   active_period: Period | null
 }
@@ -293,6 +301,7 @@ export interface JournalPageResponse {
   approved: RawTransaction[]
   entries: JournalEntryWithLines[]
   has_unclassified: boolean
+  documents: Document[]
   docs_missing_source: Document[]
   next_status: string | null
   prev_status: string | null
@@ -359,4 +368,29 @@ export interface ManualJournalEntryCreate {
 export interface StatedBalanceItem {
   account_code: number
   stated_balance: string
+}
+
+// ── Orchestration ──────────────────────────────────────────────────
+
+export interface OrchestrationStepResult {
+  document_id: string
+  file_name: string
+  resolved_type: string
+  resolved_source_account_code: number | null
+  resolved_account_name: string | null
+  type_reason: string | null
+  source_account_reason: string | null
+  run_classifier: boolean
+  status: 'complete' | 'failed' | 'needs_review'
+  error: string | null
+}
+
+export interface OrchestrationResult {
+  period_id: string
+  parsed: number
+  failed: number
+  needs_review: number
+  classifier_ran: boolean
+  classifier_updated: number
+  steps: OrchestrationStepResult[]
 }

@@ -62,6 +62,12 @@ class AssetSeriesPoint(BaseModel):
     amount: str
 
 
+class RetirementContributionPoint(BaseModel):
+    account_code: int
+    account_name: str
+    amount: str
+
+
 class RecentEntryPoint(BaseModel):
     description: str
     entry_date: str
@@ -95,6 +101,8 @@ class DashboardResponse(BaseModel):
     expense_category_series: list[ExpenseCategorySeriesPoint]
     asset_composition: list[AssetCompositionPoint]
     asset_series: list[AssetSeriesPoint]
+    ytd_year: Optional[int]
+    ytd_retirement_contributions: list[RetirementContributionPoint]
     recent_entries: list[RecentEntryPoint]
     active_period: Optional[PeriodRead]
 
@@ -211,6 +219,7 @@ class JournalPageResponse(BaseModel):
     approved: list[RawTransactionRead]
     entries: list[JournalEntryWithLines]
     has_unclassified: bool
+    documents: list[DocumentRead]
     docs_missing_source: list[DocumentRead]
     next_status: Optional[str]
     prev_status: Optional[str]

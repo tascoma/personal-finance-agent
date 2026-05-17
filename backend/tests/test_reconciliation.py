@@ -256,7 +256,7 @@ async def test_reconciled_status_when_gap_zero(session_factory):
     await _set_stated_balance(session_factory, current.period_id, 100101, Decimal("1100"))
 
     async with session_factory() as s:
-        rows = await recon_service.run_reconciliation(s, current.period_id)
+        rows, _ = await recon_service.run_reconciliation(s, current.period_id)
 
     assert len(rows) == 1
     assert rows[0].status == "reconciled"
@@ -274,7 +274,7 @@ async def test_pending_status_when_gap_nonzero(session_factory):
     await _set_stated_balance(session_factory, current.period_id, 100101, Decimal("1200"))
 
     async with session_factory() as s:
-        rows = await recon_service.run_reconciliation(s, current.period_id)
+        rows, _ = await recon_service.run_reconciliation(s, current.period_id)
 
     assert rows[0].status == "pending"
     assert rows[0].gap == Decimal("200")   # stated - computed = 1200 - 1000
@@ -378,7 +378,7 @@ async def test_unrealized_gl_closes_gap(session_factory):
 
     # First reconciliation: gap = $10,000 - $0 = $10,000
     async with session_factory() as s:
-        rows = await recon_service.run_reconciliation(s, current.period_id)
+        rows, _ = await recon_service.run_reconciliation(s, current.period_id)
     assert rows[0].status == "pending"
     assert rows[0].gap == Decimal("10000")
 
@@ -390,7 +390,7 @@ async def test_unrealized_gl_closes_gap(session_factory):
 
     # Second reconciliation: gap should be 0
     async with session_factory() as s:
-        rows = await recon_service.run_reconciliation(s, current.period_id)
+        rows, _ = await recon_service.run_reconciliation(s, current.period_id)
     assert rows[0].status == "reconciled"
     assert rows[0].gap == _ZERO
 

@@ -1,0 +1,381 @@
+"""Orchestration service — plan-then-execute parse for a batch of documents.
+
+The flow:
+  1. Load every `parse_status="pending"` document for the period, and the
+     user's active chart of accounts.
+  2. Build a short digest per document (filename, extension, small content
+     peek) — never the full file.
+  3. Call `run_orchestrator` once with the digests and account list to get an
+     `OrchestrationPlan` covering the batch.
+  4. For each step in the plan, persist any `document_type` correction and any
+     matched `source_account_code`, then call `parse_service.parse_document`.
+     If the orchestrator could not match a source account, the document is left
+     as `pending` and the step is reported with `status="needs_review"` instead
+     of being parsed.
+  5. If any successfully parsed step requested it, run
+     `classify_service.classify_period` once for the period at the end.
+
+Per-step failures are caught so a single bad file doesn't abort the rest.
+"""
+
+import logging
+import uuid
+from pathlib import Path
+from typing import Sequence
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.agents.orchestrator import (
+    AccountChoice,
+    DocumentDigest,
+    OrchestrationPlan,
+    run_orchestrator,
+)
+from app.models.account import Account
+from app.models.document import Document
+from app.schemas.orchestrate import OrchestrationResult, OrchestrationStepResult
+from app.services import classify as classify_service
+from app.services import parse as parse_service
+from app.services.file_readers import (
+    ParseError,
+    extract_csv_rows,
+    extract_pdf_text,
+    extract_xlsx_rows,
+)
+
+logger = logging.getLogger(__name__)
+
+PDF_PEEK_CHARS = 2500
+TABULAR_PEEK_ROWS = 15
+
+
+def _build_digest(document: Document) -> DocumentDigest:
+    """Read a small content peek from disk for the orchestrator's routing decision."""
+    path = Path(document.file_path)
+    extension = path.suffix.lower()
+    peek = ""
+    read_failed = False
+    try:
+        if extension == ".pdf":
+            text = extract_pdf_text(path)
+            peek = text[:PDF_PEEK_CHARS]
+        elif extension == ".csv":
+            rows = extract_csv_rows(path)
+            peek = "\n".join(", ".join(f"{k}={v}" for k, v in r.items()) for r in rows[:TABULAR_PEEK_ROWS])
+        elif extension == ".xlsx":
+            rows_x = extract_xlsx_rows(path)
+            peek = "\n".join(" | ".join(str(c) if c is not None else "" for c in r) for r in rows_x[:TABULAR_PEEK_ROWS])
+        else:
+            peek = f"(unsupported extension: {extension})"
+            read_failed = True
+    except ParseError as exc:
+        logger.warning(
+            "ParseError reading digest peek for document %s (%s): %s",
+            document.document_id,
+            document.file_name,
+            exc,
+        )
+        peek = f"(could not read file: {exc})"
+        read_failed = True
+    except Exception as exc:
+        logger.exception(
+            "Unexpected error reading digest peek for document %s (%s)",
+            document.document_id,
+            document.file_name,
+        )
+        peek = f"(error reading file: {exc})"
+        read_failed = True
+
+    if not read_failed and not peek.strip():
+        logger.warning(
+            "Digest peek for document %s (%s) is empty — orchestrator will only see the filename",
+            document.document_id,
+            document.file_name,
+        )
+    elif not read_failed:
+        logger.info(
+            "Built digest for document %s (%s): %d chars of content peek",
+            document.document_id,
+            document.file_name,
+            len(peek),
+        )
+
+    return DocumentDigest(
+        document_id=document.document_id,
+        file_name=document.file_name,
+        file_extension=extension,
+        content_peek=peek,
+    )
+
+
+async def _load_account_choices(db: AsyncSession) -> tuple[list[AccountChoice], dict[int, Account]]:
+    result = await db.scalars(
+        select(Account).where(Account.is_active.is_(True)).order_by(Account.account_code)
+    )
+    accounts = result.all()
+    by_code = {a.account_code: a for a in accounts}
+    choices = [
+        AccountChoice(
+            account_code=a.account_code,
+            account_name=a.account_name,
+            account_type=a.account_type,
+            sub_category=a.sub_category,
+        )
+        for a in accounts
+    ]
+    return choices, by_code
+
+
+async def orchestrate_parse(
+    db: AsyncSession,
+    period_id: uuid.UUID,
+) -> OrchestrationResult:
+    docs_result = await db.scalars(
+        select(Document).where(
+            Document.period_id == period_id,
+            Document.parse_status == "pending",
+        )
+    )
+    pending: Sequence[Document] = docs_result.all()
+    if not pending:
+        return OrchestrationResult(
+            period_id=period_id,
+            parsed=0,
+            failed=0,
+            needs_review=0,
+            classifier_ran=False,
+            classifier_updated=0,
+            steps=[],
+        )
+
+    docs_by_id: dict[uuid.UUID, Document] = {d.document_id: d for d in pending}
+    digests = [_build_digest(d) for d in pending]
+    account_choices, accounts_by_code = await _load_account_choices(db)
+
+    logger.info(
+        "Calling orchestrator for period %s with %d pending docs and %d active accounts",
+        period_id,
+        len(pending),
+        len(account_choices),
+    )
+    if not account_choices:
+        logger.warning(
+            "No active accounts found — orchestrator cannot resolve any source_account_code for period %s",
+            period_id,
+        )
+
+    plan: OrchestrationPlan = await run_orchestrator(digests, account_choices)
+    logger.info(
+        "Orchestrator planned %d steps for period %s (from %d pending docs)",
+        len(plan.steps),
+        period_id,
+        len(pending),
+    )
+    for step in plan.steps:
+        logger.info(
+            "Plan for document %s: resolved_type=%s, resolved_source_account_code=%s, "
+            "run_classifier=%s, type_reason=%r, source_account_reason=%r",
+            step.document_id,
+            step.resolved_type,
+            step.resolved_source_account_code,
+            step.run_classifier,
+            step.type_reason,
+            step.source_account_reason,
+        )
+
+    step_results: list[OrchestrationStepResult] = []
+    any_classifier_requested = False
+    parsed = 0
+    failed = 0
+    needs_review = 0
+
+    planned_ids = {step.document_id for step in plan.steps}
+    missing = [d for d in pending if d.document_id not in planned_ids]
+    for d in missing:
+        logger.warning("Orchestrator skipped document %s — recording as failed", d.document_id)
+        step_results.append(
+            OrchestrationStepResult(
+                document_id=d.document_id,
+                file_name=d.file_name,
+                resolved_type=d.document_type,
+                resolved_source_account_code=d.source_account_code,
+                resolved_account_name=(
+                    accounts_by_code[d.source_account_code].account_name
+                    if d.source_account_code in accounts_by_code
+                    else None
+                ),
+                run_classifier=False,
+                status="failed",
+                error="Orchestrator did not return a plan for this document",
+            )
+        )
+        failed += 1
+
+    for step in plan.steps:
+        doc = docs_by_id.get(step.document_id)
+        if doc is None:
+            logger.warning(
+                "Orchestrator returned unknown document_id %s — skipping", step.document_id
+            )
+            continue
+
+        doc_id = doc.document_id
+        file_name = doc.file_name
+
+        if step.resolved_type != doc.document_type:
+            logger.info(
+                "Orchestrator reclassified document %s: %s → %s (reason: %s)",
+                doc.document_id,
+                doc.document_type,
+                step.resolved_type,
+                step.type_reason,
+            )
+            doc.document_type = step.resolved_type
+
+        resolved_account_name: str | None = None
+        resolved_code: int | None = step.resolved_source_account_code
+        if resolved_code is not None:
+            account = accounts_by_code.get(resolved_code)
+            if account is None:
+                logger.warning(
+                    "Orchestrator returned unknown account_code %s for document %s — treating as unresolved",
+                    resolved_code,
+                    doc.document_id,
+                )
+                resolved_code = None
+            else:
+                resolved_account_name = account.account_name
+                if doc.source_account_code != account.account_code:
+                    logger.info(
+                        "Orchestrator set source_account_code=%s on document %s (reason: %s)",
+                        account.account_code,
+                        doc.document_id,
+                        step.source_account_reason,
+                    )
+                    doc.source_account_code = account.account_code
+
+        await db.commit()
+
+        if resolved_code is None and step.resolved_type != "opening_balances":
+            needs_review += 1
+            logger.warning(
+                "Document %s (%s) needs review: orchestrator could not resolve a source account "
+                "(resolved_type=%s, source_account_reason=%r)",
+                doc.document_id,
+                doc.file_name,
+                step.resolved_type,
+                step.source_account_reason,
+            )
+            step_results.append(
+                OrchestrationStepResult(
+                    document_id=doc.document_id,
+                    file_name=doc.file_name,
+                    resolved_type=step.resolved_type,
+                    resolved_source_account_code=None,
+                    resolved_account_name=None,
+                    type_reason=step.type_reason,
+                    source_account_reason=step.source_account_reason,
+                    run_classifier=step.run_classifier,
+                    status="needs_review",
+                    error=(
+                        step.source_account_reason
+                        or "Could not match a source account from this document"
+                    ),
+                )
+            )
+            continue
+
+        if step.run_classifier:
+            any_classifier_requested = True
+
+        try:
+            await parse_service.parse_document(db, doc_id)
+            parsed += 1
+            step_results.append(
+                OrchestrationStepResult(
+                    document_id=doc_id,
+                    file_name=file_name,
+                    resolved_type=step.resolved_type,
+                    resolved_source_account_code=resolved_code,
+                    resolved_account_name=resolved_account_name,
+                    type_reason=step.type_reason,
+                    source_account_reason=step.source_account_reason,
+                    run_classifier=step.run_classifier,
+                    status="complete",
+                )
+            )
+        except ParseError as exc:
+            logger.warning(
+                "ParseError parsing document %s (%s) as %s: %s",
+                doc_id,
+                file_name,
+                step.resolved_type,
+                exc,
+            )
+            failed += 1
+            step_results.append(
+                OrchestrationStepResult(
+                    document_id=doc_id,
+                    file_name=file_name,
+                    resolved_type=step.resolved_type,
+                    resolved_source_account_code=resolved_code,
+                    resolved_account_name=resolved_account_name,
+                    type_reason=step.type_reason,
+                    source_account_reason=step.source_account_reason,
+                    run_classifier=step.run_classifier,
+                    status="failed",
+                    error=str(exc),
+                )
+            )
+        except Exception as exc:
+            logger.exception(
+                "Unexpected error parsing document %s (%s) as %s",
+                doc_id,
+                file_name,
+                step.resolved_type,
+            )
+            # Roll back so the next step in this batch can still commit.
+            try:
+                await db.rollback()
+            except Exception:
+                logger.exception("Failed to roll back session after parse error for document %s", doc_id)
+            failed += 1
+            step_results.append(
+                OrchestrationStepResult(
+                    document_id=doc_id,
+                    file_name=file_name,
+                    resolved_type=step.resolved_type,
+                    resolved_source_account_code=resolved_code,
+                    resolved_account_name=resolved_account_name,
+                    type_reason=step.type_reason,
+                    source_account_reason=step.source_account_reason,
+                    run_classifier=step.run_classifier,
+                    status="failed",
+                    error=f"Unexpected error: {exc}",
+                )
+            )
+
+    classifier_updated = 0
+    if any_classifier_requested and parsed > 0:
+        try:
+            classifier_updated = await classify_service.classify_period(db, period_id)
+            logger.info(
+                "Classifier updated %d transactions for period %s after orchestration",
+                classifier_updated,
+                period_id,
+            )
+        except Exception:
+            logger.exception(
+                "Classifier failed after orchestration for period %s — continuing", period_id
+            )
+
+    return OrchestrationResult(
+        period_id=period_id,
+        parsed=parsed,
+        failed=failed,
+        needs_review=needs_review,
+        classifier_ran=any_classifier_requested and parsed > 0,
+        classifier_updated=classifier_updated,
+        steps=step_results,
+    )

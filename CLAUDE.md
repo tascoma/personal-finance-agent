@@ -18,7 +18,7 @@ Practice project for building a full-stack web app with a FastAPI backend and Re
 - **Small, focused changes.** One concern per commit. Don't bundle refactors with feature work.
 - **No comments for what the code says.** Only comment the *why* when it's non-obvious (a workaround, a constraint, a subtle invariant).
 - **Never commit secrets.** `.env` stays gitignored; `.env.example` documents the shape.
-- **Never load log files.** Do not read files from `backend/logs/` — they are runtime output and can be large. Diagnose issues from source code, tests, and structured logging configuration instead.
+- **Reading log files is fine, but be targeted.** `backend/logs/app.log` is fair game for debugging. It can be large, so prefer `grep` / `tail` over reading the whole file. Combine the source code, tests, structured logging config, and recent log output when diagnosing an issue.
 
 ## Tech stack
 
@@ -45,11 +45,13 @@ Practice project for building a full-stack web app with a FastAPI backend and Re
 External services this app depends on:
 
 - **GitHub** (`tascoma/personal-finance-ai`) — source of truth. Pushes to `main` deploy to the prod Render service; pushes to `dev` deploy to the staging Render service.
-- **Render** — hosts two web services in region `oregon`, both built from the multi-stage Dockerfile:
-  - **Production** — `personal-finance-ai` (`srv-d7vngnlckfvc73eq4uq0`), tracks `main`, served at https://personal-finance-agent-ipuu.onrender.com (URL pre-dates the rename; Render hostnames don't change on rename).
-  - **Staging** — `personal-finance-ai-stage` (`srv-d81rnpfaqgkc73ctsad0`), tracks `dev`, served at https://personal-finance-agent-1-tqet.onrender.com.
-  - Both services currently share the same `pfa-db` Postgres instance.
-- **Supabase** — managed PostgreSQL accessed via `asyncpg`. Schema is owned by Alembic — never edit tables in the Supabase UI. Connection string lives in `DATABASE_URL` (use the Supabase transaction pooler URI on port 6543)
+- **Render** — hosts two web services in region `oregon`, both built from the multi-stage Dockerfile. Each service has its own `DATABASE_URL` pointing at a different Supabase project (see below):
+  - **Production** — `personal-finance-ai` (`srv-d7vngnlckfvc73eq4uq0`), tracks `main`, served at https://personal-finance-agent-ipuu.onrender.com (URL pre-dates the rename; Render hostnames don't change on rename). Connects to the Supabase prod project.
+  - **Staging** — `personal-finance-ai-stage` (`srv-d81rnpfaqgkc73ctsad0`), tracks `dev`, served at https://personal-finance-agent-1-tqet.onrender.com. Connects to the Supabase `stage` branch.
+- **Supabase** — managed PostgreSQL accessed via `asyncpg`. Schema is owned by Alembic — never edit tables in the Supabase UI. Two databases are wired up via Pro-plan branching, and each `DATABASE_URL` is the transaction-pooler URI on port 6543 (`aws-1-us-west-2.pooler.supabase.com`):
+  - **Prod** — project ref `bupibumcqijqpsqisslg` (the persistent main branch). Used by the Render prod service. Local `.env` keeps the prod URL commented out as a manual escape hatch; only uncomment it when intentionally targeting prod data.
+  - **Stage** — branch ref `fkolwbrvxvmmcukkxvgy` (persistent, tied to git `dev`). Used by the Render staging service and by local dev (local `.env` points here). Migrations run here first via the Render staging deploy; promote schema + features to prod by merging `dev` → `main`. The branch was bootstrapped empty (no prod data carryover); seed the chart of accounts and create a user via `backend/scripts/create_user.py` before using staging.
+  - **Migration quirk to know about:** the `7fceefecdbfb_add_users_table` Alembic revision is a `pass` no-op even though `a3e1f2c8d501` ALTERs `users`. Prod's `users` table was created outside Alembic at some point. When bootstrapping a fresh database (e.g. a new branch), run `alembic upgrade 7fceefecdbfb`, manually `CREATE TABLE users` to match prod (without `token_version`), then `alembic upgrade head`. Don't retroactively edit the migration file without coordinating — prod's `alembic_version` is already at head.
 - **Anthropic (Claude)** — LLM behind every Pydantic-AI agent in `app/agents/`. Requires `ANTHROPIC_API_KEY`. Default model is Claude Sonnet 4.6
 
 Build-time package sources: **PyPI** (via `uv`), **npm registry**, **Docker Hub / GHCR** (`node:20-alpine`, `ghcr.io/astral-sh/uv:python3.12-bookworm-slim`).

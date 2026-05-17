@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 UPLOAD_ROOT = Path(__file__).resolve().parents[2] / "uploads"
 
 ALLOWED_DOCUMENT_TYPES: frozenset[str] = frozenset(
-    {"paystub", "bank_statement", "credit_card", "investment", "mortgage_statement", "manual", "opening_balances"}
+    {"paystub", "bank_statement", "credit_card", "investment", "mortgage_statement", "manual", "opening_balances", "unknown"}
 )
 ALLOWED_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".csv", ".xlsx"})
 
@@ -49,9 +49,9 @@ def _unique_destination(directory: Path, file_name: str) -> Path:
 async def save_upload(
     db: AsyncSession,
     period_id: uuid.UUID,
-    document_type: str,
-    source_account_code: int | None,
     upload: UploadFile,
+    document_type: str = "unknown",
+    source_account_code: int | None = None,
 ) -> Document:
     if document_type not in ALLOWED_DOCUMENT_TYPES:
         raise DocumentError(f"Invalid document_type: {document_type}")

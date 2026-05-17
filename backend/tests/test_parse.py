@@ -223,6 +223,10 @@ async def test_csv_statement_parses_rows(session_factory, csv_document):
     assert by_desc["GROCERY STORE"].amount == Decimal("-45.50")
     assert doc.parse_status == "complete"
     assert doc.llm_model is None  # CSV path doesn't use the LLM
+    # Document.parsed_at is TIMESTAMP WITHOUT TIME ZONE — asyncpg rejects tz-aware
+    # values on this column, so the service must write a naive UTC datetime.
+    assert doc.parsed_at is not None
+    assert doc.parsed_at.tzinfo is None
 
 
 @pytest.mark.asyncio

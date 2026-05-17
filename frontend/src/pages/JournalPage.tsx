@@ -15,12 +15,13 @@ import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
 import PeriodStepper from '../components/PeriodStepper'
+import WorkflowHint from '../components/WorkflowHint'
 import Banner from '../components/Banner'
 import EmptyState from '../components/EmptyState'
 import ConfidencePill from '../components/ConfidencePill'
 import SvgIcon from '../components/SvgIcon'
 import { fmtPeriod, fmtStatus, fmtDebitCredit } from '../utils/format'
-import type { JournalLineCreate } from '../types'
+import type { JournalLineCreate, JournalPageResponse, RawTransaction } from '../types'
 
 type Tab = 'staged' | 'approved' | 'posted'
 
@@ -40,10 +41,21 @@ export default function JournalPage() {
     { acct: '', debit: '', credit: '', memo: '' },
   ])
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['journal', periodId] })
+  const journalKey = ['journal', periodId] as const
+  const invalidate = () => qc.invalidateQueries({ queryKey: journalKey })
+
+  const patchJournal = (mutator: (prev: JournalPageResponse) => JournalPageResponse) => {
+    const prev = qc.getQueryData<JournalPageResponse>(journalKey)
+    if (prev) qc.setQueryData<JournalPageResponse>(journalKey, mutator(prev))
+    return prev
+  }
+
+  const rollback = (prev: JournalPageResponse | undefined) => {
+    if (prev) qc.setQueryData<JournalPageResponse>(journalKey, prev)
+  }
 
   const { data, isLoading } = useQuery({
-    queryKey: ['journal', periodId],
+    queryKey: journalKey,
     queryFn: () => fetchJournalPage(periodId!),
     staleTime: 30_000,
     enabled: !!periodId,
@@ -61,46 +73,95 @@ export default function JournalPage() {
     onError: (e: Error) => setError(e.message),
   })
 
+  // Optimistic mutations — patch the cached JournalPageResponse directly so the UI
+  // updates instantly, skipping the expensive ~7-query journal page refetch per click.
   const approve = useMutation({
     mutationFn: (id: string) => approveTransaction(periodId!, id),
-    onSuccess: invalidate,
-    onError: (e: Error) => setError(e.message),
+    onMutate: (id: string) => ({
+      prev: patchJournal((p) => {
+        const txn = p.staged.find((t) => t.raw_txn_id === id)
+        if (!txn) return p
+        return {
+          ...p,
+          staged: p.staged.filter((t) => t.raw_txn_id !== id),
+          approved: [...p.approved, { ...txn, status: 'approved' }],
+        }
+      }),
+    }),
+    onError: (e: Error, _id, ctx) => { rollback(ctx?.prev); setError(e.message) },
   })
 
   const unapprove = useMutation({
     mutationFn: (id: string) => unapproveTransaction(periodId!, id),
-    onSuccess: invalidate,
-    onError: (e: Error) => setError(e.message),
+    onMutate: (id: string) => ({
+      prev: patchJournal((p) => {
+        const txn = p.approved.find((t) => t.raw_txn_id === id)
+        if (!txn) return p
+        return {
+          ...p,
+          approved: p.approved.filter((t) => t.raw_txn_id !== id),
+          staged: [...p.staged, { ...txn, status: 'staged' }],
+        }
+      }),
+    }),
+    onError: (e: Error, _id, ctx) => { rollback(ctx?.prev); setError(e.message) },
   })
 
   const reject = useMutation({
     mutationFn: (id: string) => rejectTransaction(periodId!, id),
-    onSuccess: invalidate,
-    onError: (e: Error) => setError(e.message),
+    onMutate: (id: string) => ({
+      prev: patchJournal((p) => ({
+        ...p,
+        staged: p.staged.filter((t) => t.raw_txn_id !== id),
+      })),
+    }),
+    onError: (e: Error, _id, ctx) => { rollback(ctx?.prev); setError(e.message) },
   })
 
   const approveAll = useMutation({
     mutationFn: () => approveAllStaged(periodId!),
-    onSuccess: (r) => { setSuccess(`Approved ${r.updated} transaction(s).`); invalidate() },
-    onError: (e: Error) => setError(e.message),
+    onMutate: () => ({
+      prev: patchJournal((p) => ({
+        ...p,
+        staged: [],
+        approved: [...p.approved, ...p.staged.map((t): RawTransaction => ({ ...t, status: 'approved' }))],
+      })),
+    }),
+    onSuccess: (r) => setSuccess(`Approved ${r.updated} transaction(s).`),
+    onError: (e: Error, _v, ctx) => { rollback(ctx?.prev); setError(e.message) },
   })
 
   const unapproveAllMut = useMutation({
     mutationFn: () => unapproveAll(periodId!),
-    onSuccess: invalidate,
-    onError: (e: Error) => setError(e.message),
+    onMutate: () => ({
+      prev: patchJournal((p) => ({
+        ...p,
+        approved: [],
+        staged: [...p.staged, ...p.approved.map((t): RawTransaction => ({ ...t, status: 'staged' }))],
+      })),
+    }),
+    onError: (e: Error, _v, ctx) => { rollback(ctx?.prev); setError(e.message) },
   })
 
   const rejectAll = useMutation({
     mutationFn: () => rejectAllStaged(periodId!),
-    onSuccess: invalidate,
-    onError: (e: Error) => setError(e.message),
+    onMutate: () => ({
+      prev: patchJournal((p) => ({ ...p, staged: [] })),
+    }),
+    onError: (e: Error, _v, ctx) => { rollback(ctx?.prev); setError(e.message) },
   })
 
   const updateAcct = useMutation({
     mutationFn: ({ id, code }: { id: string; code: number }) => updateTransactionAccount(periodId!, id, code),
-    onSuccess: invalidate,
-    onError: (e: Error) => setError(e.message),
+    onMutate: ({ id, code }) => ({
+      prev: patchJournal((p) => ({
+        ...p,
+        staged: p.staged.map((t) =>
+          t.raw_txn_id === id ? { ...t, suggested_account_code: code, classifier_confidence: '1.000' } : t,
+        ),
+      })),
+    }),
+    onError: (e: Error, _v, ctx) => { rollback(ctx?.prev); setError(e.message) },
   })
 
   const deleteEntry = useMutation({
@@ -147,8 +208,9 @@ export default function JournalPage() {
 
   if (isLoading || !data) return <Layout><p className="color-text3">Loading…</p></Layout>
 
-  const { period, accounts, staged, approved, entries, has_unclassified, docs_missing_source, next_status, prev_status } = data
+  const { period, accounts, staged, approved, entries, has_unclassified, documents, docs_missing_source, next_status, prev_status } = data
   const accountsByCode = Object.fromEntries(accounts.map((a) => [a.account_code, a]))
+  const documentsById = Object.fromEntries(documents.map((d) => [d.document_id, d]))
   const canEdit = period.status === 'open' || period.status === 'pending_close'
 
   const balanceIndicator = () => {
@@ -171,13 +233,23 @@ export default function JournalPage() {
         right={
           <div style={{ display: 'flex', gap: 8 }}>
             {canEdit && has_unclassified && (
-              <button className="btn btn-secondary btn-sm" disabled={classify.isPending} onClick={() => classify.mutate()}>
+              <button
+                className="btn btn-secondary btn-sm"
+                disabled={classify.isPending}
+                onClick={() => classify.mutate()}
+                title="Suggest a category for every unclassified staged transaction"
+              >
                 <SvgIcon name="brain" size={13} />
                 {classify.isPending ? 'Classifying…' : 'Classify with AI'}
               </button>
             )}
             {canEdit && approved.length > 0 && (
-              <button className="btn btn-primary btn-sm" disabled={post.isPending} onClick={() => post.mutate()}>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={post.isPending}
+                onClick={() => post.mutate()}
+                title="Write all approved transactions to the ledger as journal entries"
+              >
                 {post.isPending ? 'Posting…' : 'Post All Approved →'}
               </button>
             )}
@@ -196,6 +268,7 @@ export default function JournalPage() {
       />
 
       <PeriodStepper period={period} />
+      <WorkflowHint period={period} page="journal" />
 
       {error && <Banner variant="red" style={{ marginTop: 16 }}>{error}</Banner>}
       {success && <Banner variant="green" style={{ marginTop: 16 }}>{success}</Banner>}
@@ -253,8 +326,22 @@ export default function JournalPage() {
                 )}
                 {canEdit && staged.length > 0 && (
                   <>
-                    <button className="btn btn-primary btn-sm" disabled={approveAll.isPending} onClick={() => approveAll.mutate()}>Approve All</button>
-                    <button className="btn btn-danger btn-sm" disabled={rejectAll.isPending} onClick={() => { if (window.confirm(`Delete all ${staged.length} staged transaction(s)?`)) rejectAll.mutate() }}>Reject All</button>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      disabled={approveAll.isPending}
+                      onClick={() => approveAll.mutate()}
+                      title="Move every staged row to Approved — ready to post to the ledger"
+                    >
+                      Approve All
+                    </button>
+                    <button
+                      className="btn btn-danger btn-sm"
+                      disabled={rejectAll.isPending}
+                      onClick={() => { if (window.confirm(`Delete all ${staged.length} staged transaction(s)?`)) rejectAll.mutate() }}
+                      title="Permanently delete every staged transaction"
+                    >
+                      Reject All
+                    </button>
                   </>
                 )}
               </div>
@@ -269,6 +356,8 @@ export default function JournalPage() {
                   <tr>
                     <th>Date</th><th>Description</th>
                     <th className="text-right">Amount</th>
+                    <th>Document Type</th>
+                    <th>Source Account</th>
                     <th>Suggested Account</th>
                     <th>Confidence</th>
                     {canEdit && <th />}
@@ -277,6 +366,8 @@ export default function JournalPage() {
                 <tbody>
                   {staged.map((txn) => {
                     const n = parseFloat(txn.amount)
+                    const doc = documentsById[txn.document_id]
+                    const srcAcct = doc?.source_account_code != null ? accountsByCode[doc.source_account_code] : undefined
                     return (
                       <tr key={txn.raw_txn_id} style={txn.is_flagged ? { background: 'rgba(251,191,36,0.04)' } : undefined}>
                         <td className="mono color-text3" style={{ fontSize: 12.5 }}>{txn.txn_date}</td>
@@ -289,6 +380,14 @@ export default function JournalPage() {
                         </td>
                         <td className="mono text-right fw-600" style={{ fontSize: 13.5, color: n < 0 ? 'var(--red)' : 'var(--green)' }}>
                           {n < 0 ? `−$${Math.abs(n).toFixed(2)}` : `$${n.toFixed(2)}`}
+                        </td>
+                        <td className="color-text2" style={{ fontSize: 12.5 }}>
+                          {doc ? doc.document_type.replace(/_/g, ' ') : <span className="color-text3">—</span>}
+                        </td>
+                        <td className="color-text2" style={{ fontSize: 12.5 }}>
+                          {srcAcct
+                            ? <span className="mono">{srcAcct.account_code} · {srcAcct.account_name}</span>
+                            : <span className="color-text3">—</span>}
                         </td>
                         <td>
                           {canEdit ? (
@@ -311,8 +410,8 @@ export default function JournalPage() {
                         {canEdit && (
                           <td>
                             <div style={{ display: 'flex', gap: 6 }}>
-                              <button className="btn btn-primary btn-sm" disabled={approve.isPending} onClick={() => approve.mutate(txn.raw_txn_id)}>Approve</button>
-                              <button className="btn btn-danger btn-sm" disabled={reject.isPending} onClick={() => reject.mutate(txn.raw_txn_id)}>Reject</button>
+                              <button className="btn btn-primary btn-sm" onClick={() => approve.mutate(txn.raw_txn_id)}>Approve</button>
+                              <button className="btn btn-danger btn-sm" onClick={() => reject.mutate(txn.raw_txn_id)}>Reject</button>
                             </div>
                           </td>
                         )}
@@ -368,7 +467,7 @@ export default function JournalPage() {
                       <td><ConfidencePill confidence={txn.classifier_confidence} /></td>
                       {canEdit && (
                         <td>
-                          <button className="btn btn-ghost btn-sm" disabled={unapprove.isPending} onClick={() => unapprove.mutate(txn.raw_txn_id)}>Undo</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => unapprove.mutate(txn.raw_txn_id)}>Undo</button>
                         </td>
                       )}
                     </tr>
@@ -420,7 +519,14 @@ export default function JournalPage() {
                         <tr><th>Account</th><th>Memo</th><th className="text-right" style={{ width: 130 }}>Debit</th><th className="text-right" style={{ width: 130 }}>Credit</th></tr>
                       </thead>
                       <tbody>
-                        {entry.lines.map((line) => {
+                        {[...entry.lines]
+                          .sort((a, b) => {
+                            const aDebit = parseFloat(a.debit_amount) > 0
+                            const bDebit = parseFloat(b.debit_amount) > 0
+                            if (aDebit !== bDebit) return aDebit ? -1 : 1
+                            return a.account_code - b.account_code
+                          })
+                          .map((line) => {
                           const acct = accountsByCode[line.account_code]
                           return (
                             <tr key={line.line_id}>

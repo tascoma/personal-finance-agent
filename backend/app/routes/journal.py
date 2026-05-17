@@ -87,13 +87,16 @@ async def get_journal_page(
         t.classifier_confidence == Decimal("0") and not t.is_duplicate for t in staged
     )
 
-    docs_result = await db.scalars(
-        select(Document).where(
-            Document.period_id == period_id,
-            Document.source_account_code.is_(None),
-            Document.parse_status == "complete",
-        )
+    all_docs_result = await db.scalars(
+        select(Document)
+        .where(Document.period_id == period_id)
+        .order_by(Document.created_at)
     )
+    all_docs = list(all_docs_result.all())
+    docs_missing_source = [
+        d for d in all_docs
+        if d.source_account_code is None and d.parse_status == "complete"
+    ]
 
     return JournalPageResponse(
         period=PeriodRead.model_validate(period),
@@ -102,7 +105,8 @@ async def get_journal_page(
         approved=[RawTransactionRead.model_validate(t) for t in approved_result.all()],
         entries=[_build_entry_with_lines(e, lines_by_entry) for e in entries_result.all()],
         has_unclassified=has_unclassified,
-        docs_missing_source=[DocumentRead.model_validate(d) for d in docs_result.all()],
+        documents=[DocumentRead.model_validate(d) for d in all_docs],
+        docs_missing_source=[DocumentRead.model_validate(d) for d in docs_missing_source],
         next_status=period_service.next_status(period.status),
         prev_status=period_service.prev_status(period.status),
     )

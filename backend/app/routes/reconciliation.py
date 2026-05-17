@@ -29,6 +29,7 @@ async def _build_page(
     db: AsyncSession,
     period_id: uuid.UUID,
     analysis: ReconciliationAnalysis | None = None,
+    balances: dict[int, dict] | None = None,
 ) -> ReconcilePageResponse:
     period = await period_service.get_period(db, period_id)
     if period is None:
@@ -41,7 +42,8 @@ async def _build_page(
     ran = len(raw_rows) > 0
 
     if ran:
-        balances = await recon_service.compute_account_balances(db, period)
+        if balances is None:
+            balances = await recon_service.compute_account_balances(db, period)
         details: list[ReconciliationDetail] = [
             ReconciliationDetail(
                 recon_id=row.recon_id,
@@ -111,10 +113,10 @@ async def run_reconciliation(
     db: AsyncSession = Depends(get_db_session),
 ) -> ReconcilePageResponse:
     try:
-        await recon_service.run_reconciliation(db, period_id)
+        _, balances = await recon_service.run_reconciliation(db, period_id)
     except recon_service.ReconciliationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return await _build_page(db, period_id)
+    return await _build_page(db, period_id, balances=balances)
 
 
 @router.post("/periods/{period_id}/reconcile/analyze", response_model=ReconcilePageResponse)
@@ -190,10 +192,10 @@ async def post_unrealized_gl(
         raise HTTPException(status_code=404, detail="No reconciliation row found for this account")
     try:
         await recon_service.create_unrealized_gl_entry(db, period_id, body.account_code, row.gap)
-        await recon_service.run_reconciliation(db, period_id)
+        _, balances = await recon_service.run_reconciliation(db, period_id)
     except recon_service.ReconciliationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return await _build_page(db, period_id)
+    return await _build_page(db, period_id, balances=balances)
 
 
 @router.post("/periods/{period_id}/reconcile/post-closing", response_model=ReconcilePageResponse)

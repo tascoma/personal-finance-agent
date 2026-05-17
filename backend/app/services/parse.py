@@ -148,7 +148,7 @@ async def parse_document(
             await db.commit()
             raise ParseError(f"Unexpected parse failure: {exc}") from exc
         document.parse_status = "complete"
-        document.parsed_at = datetime.now(timezone.utc)
+        document.parsed_at = datetime.now(timezone.utc).replace(tzinfo=None)
         document.llm_model = None
         await db.commit()
         logger.info(
@@ -183,7 +183,7 @@ async def parse_document(
         raise ParseError(f"Unexpected parse failure: {exc}") from exc
 
     document.parse_status = "complete"
-    document.parsed_at = datetime.now(timezone.utc)
+    document.parsed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     document.llm_model = llm_model
     await db.commit()
     logger.info(

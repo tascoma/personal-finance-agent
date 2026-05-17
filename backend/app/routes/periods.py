@@ -18,8 +18,11 @@ from app.schemas.api_responses import (
     StatusUpdateRequest,
 )
 from app.schemas.document import DocumentRead
+from app.schemas.orchestrate import OrchestrationResult
 from app.schemas.period import PeriodCreate, PeriodRead
+from app.agents._base import AgentError
 from app.services import document as document_service
+from app.services import orchestrate as orchestrate_service
 from app.services import parse as parse_service
 from app.services import period as period_service
 from app.services import stated_balance as stated_balance_service
@@ -185,6 +188,32 @@ async def parse_all_documents(
     parsed = sum(1 for v in results.values() if not isinstance(v, str))
     logger.info("Parsed %d documents for period %s, %d errors", parsed, period_id, len(errors))
     return ParseResult(parsed=parsed, errors=errors)
+
+
+@router.post("/periods/{period_id}/orchestrate-parse", response_model=OrchestrationResult)
+async def orchestrate_parse_documents(
+    period_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+) -> OrchestrationResult:
+    try:
+        result = await orchestrate_service.orchestrate_parse(db, period_id)
+    except AgentError as exc:
+        logger.exception("Orchestrator agent failed for period %s", period_id)
+        raise HTTPException(status_code=502, detail="Orchestration agent failed") from exc
+    except Exception:
+        logger.exception("Unexpected error orchestrating period %s", period_id)
+        raise HTTPException(
+            status_code=500, detail="Unexpected error during orchestration"
+        )
+    logger.info(
+        "Orchestrated parse for period %s: %d parsed, %d failed, %d need review, classifier_ran=%s",
+        period_id,
+        result.parsed,
+        result.failed,
+        result.needs_review,
+        result.classifier_ran,
+    )
+    return result
 
 
 @router.post("/periods/{period_id}/balances", response_model=OperationResult)

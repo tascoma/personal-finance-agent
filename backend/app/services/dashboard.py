@@ -57,6 +57,13 @@ class AssetSeriesPoint:
 
 
 @dataclass
+class RetirementContributionPoint:
+    account_code: int
+    account_name: str
+    amount: float
+
+
+@dataclass
 class RecentEntry:
     description: str
     entry_date: str
@@ -92,6 +99,8 @@ class DashboardData:
     tax_advantaged: Decimal
     tax_advantaged_prev: Decimal
     total_assets_prev: Decimal
+    ytd_year: Optional[int]
+    ytd_retirement_contributions: list[RetirementContributionPoint]
 
 
 def _sum_by_type(
@@ -170,21 +179,32 @@ async def compute_dashboard(
     else:
         periods = all_periods
 
-    # Only closed periods contribute to any metric or chart.
+    # Only closed periods contribute to operating (income/expense) metrics, but
+    # balance-sheet cumulative state must also include any earlier still-open
+    # periods (e.g. an "opening balances" seed posted to a bootstrap month that
+    # was never formally closed). Without this, KPI totals like total_assets
+    # show just the latest period's net change instead of the running balance.
     all_closed_periods = [p for p in all_periods if p.status == "closed"]
     all_closed_ids = {p.period_id for p in all_closed_periods}
 
     closed_filter_periods = [p for p in periods if p.status == "closed"]
     filter_closed_ids = {p.period_id for p in closed_filter_periods}
 
-    # Balance-sheet figures are cumulative — use all closed periods up to and
+    if all_closed_periods:
+        max_closed_start = max(p.period_start for p in all_closed_periods)
+        bs_relevant_periods = [p for p in all_periods if p.period_start <= max_closed_start]
+    else:
+        bs_relevant_periods = []
+    bs_relevant_ids = {p.period_id for p in bs_relevant_periods}
+
+    # Balance-sheet figures are cumulative — use all bs-relevant periods up to and
     # including the last closed period in the filter selection so that
     # total_assets / net_worth reflect the actual balance, not just the period's change.
     if closed_filter_periods:
         max_filter_start = max(p.period_start for p in closed_filter_periods)
-        bs_period_ids = {p.period_id for p in all_closed_periods if p.period_start <= max_filter_start}
+        bs_period_ids = {p.period_id for p in bs_relevant_periods if p.period_start <= max_filter_start}
     else:
-        bs_period_ids = all_closed_ids
+        bs_period_ids = bs_relevant_ids
 
     rows = await db.execute(
         select(JournalLine, JournalEntry.period_id, JournalEntry.entry_id, JournalEntry.is_closing)
@@ -201,7 +221,7 @@ async def compute_dashboard(
     lines_operating_by_period: dict = defaultdict(list)
     lines_operating_by_entry: dict = defaultdict(list)
     for line, pid, entry_id, is_closing in all_rows:
-        if pid in all_closed_ids:
+        if pid in bs_relevant_ids:
             lines_bs_by_pid[pid].append(line)
         if pid in bs_period_ids:
             lines_bs_all.append(line)
@@ -261,6 +281,37 @@ async def compute_dashboard(
         _ZERO,
     )
 
+    # YTD per-account retirement contributions, scoped to the calendar year of the
+    # most recent closed period (matches the existing YTD-growth pattern on the
+    # frontend). Independent of the user's period filter so the contribution
+    # progress bars always reflect the current year.
+    ytd_year: Optional[int] = (
+        max(p.period_start.year for p in all_closed_periods) if all_closed_periods else None
+    )
+    ytd_contribs_by_code: dict[int, Decimal] = defaultdict(lambda: _ZERO)
+    if ytd_year is not None:
+        ytd_period_ids = {p.period_id for p in all_closed_periods if p.period_start.year == ytd_year}
+        ytd_lines_by_entry: dict = defaultdict(list)
+        for line, pid, entry_id, is_closing in all_rows:
+            if pid in ytd_period_ids and not is_closing:
+                ytd_lines_by_entry[entry_id].append(line)
+        for entry_lines in ytd_lines_by_entry.values():
+            if not any(ln.account_code in cash_codes for ln in entry_lines):
+                continue
+            if any(accounts.get(ln.account_code) and accounts[ln.account_code].account_type == "Equity" for ln in entry_lines):
+                continue
+            for ln in entry_lines:
+                if ln.account_code in _RETIREMENT_CODES:
+                    ytd_contribs_by_code[ln.account_code] += ln.debit_amount - ln.credit_amount
+    ytd_retirement_contributions = [
+        RetirementContributionPoint(
+            account_code=code,
+            account_name=accounts[code].account_name if code in accounts else str(code),
+            amount=float(ytd_contribs_by_code.get(code, _ZERO)),
+        )
+        for code in sorted(_RETIREMENT_CODES)
+    ]
+
     lifestyle_expenses = _ZERO
     for ln in lines_operating:
         acct = accounts.get(ln.account_code)
@@ -285,7 +336,7 @@ async def compute_dashboard(
     tax_adv_filter_snapshots: list[Decimal] = []
     total_assets_filter_snapshots: list[Decimal] = []
 
-    for p in all_closed_periods:
+    for p in bs_relevant_periods:
         p_bs_lines = lines_bs_by_pid.get(p.period_id, [])
         running_assets += _sum_by_type(p_bs_lines, accounts, "Asset")
         running_liabilities += _sum_by_type(p_bs_lines, accounts, "Liability")
@@ -419,4 +470,6 @@ async def compute_dashboard(
         tax_advantaged=tax_advantaged,
         tax_advantaged_prev=tax_advantaged_prev,
         total_assets_prev=total_assets_prev_val,
+        ytd_year=ytd_year,
+        ytd_retirement_contributions=ytd_retirement_contributions,
     )
