@@ -14,6 +14,7 @@ import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
 import PeriodStepper from '../components/PeriodStepper'
+import WorkflowHint from '../components/WorkflowHint'
 import Banner from '../components/Banner'
 import SvgIcon from '../components/SvgIcon'
 import { fmtPeriod } from '../utils/format'
@@ -96,13 +97,19 @@ export default function ReconcilePage() {
         backLabel={fmtPeriod(period.period_start)}
         badge={<StatusBadge status={period.status} />}
         right={canEdit && (
-          <button className="btn btn-primary btn-sm" disabled={run.isPending} onClick={() => run.mutate()}>
+          <button
+            className="btn btn-primary btn-sm"
+            disabled={run.isPending}
+            onClick={() => run.mutate()}
+            title="Compare computed ledger balances against your stated month-end balances"
+          >
             {run.isPending ? 'Running…' : 'Run Reconciliation'}
           </button>
         )}
       />
 
       <PeriodStepper period={period} />
+      <WorkflowHint period={period} page="reconcile" />
 
       {loadError && <Banner variant="red" style={{ marginTop: 16 }}>Failed to load reconciliation data.</Banner>}
       {error && <Banner variant="red" style={{ marginTop: 16 }}>{error}</Banner>}
@@ -272,7 +279,12 @@ export default function ReconcilePage() {
               <div className="card-sub">Income and expense accounts to be zeroed at period close</div>
             </div>
             {!temp_preview.closing_posted && canEdit && (temp_preview.income_accounts.length > 0 || temp_preview.expense_accounts.length > 0) && (
-              <button className="btn btn-primary btn-sm" disabled={postClosing.isPending} onClick={() => postClosing.mutate()}>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={postClosing.isPending}
+                onClick={() => postClosing.mutate()}
+                title="Zero income and expense accounts into Current Period Net Income (300103)"
+              >
                 {postClosing.isPending ? 'Posting…' : 'Post Closing Entries'}
               </button>
             )}
@@ -327,7 +339,12 @@ export default function ReconcilePage() {
               <div className="card-sub">Transfer net income from 300103 to 300102 Prior Period Net Worth</div>
             </div>
             {!equity_preview.rollup_posted && parseFloat(equity_preview.net_income_balance) !== 0 && canEdit && (
-              <button className="btn btn-primary btn-sm" disabled={postEquity.isPending} onClick={() => postEquity.mutate()}>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={postEquity.isPending}
+                onClick={() => postEquity.mutate()}
+                title="Transfer Current Period Net Income (300103) into Prior Period Net Worth (300102)"
+              >
                 {postEquity.isPending ? 'Posting…' : 'Post Equity Rollup'}
               </button>
             )}
@@ -381,6 +398,7 @@ export default function ReconcilePage() {
               className={`btn ${has_gaps ? 'btn-secondary' : 'btn-primary'}`}
               disabled={advanceStatus.isPending}
               onClick={() => { if (window.confirm('Close this period? This cannot be undone without reopening.')) advanceStatus.mutate('closed') }}
+              title="Lock the period — entries become read-only until reopened"
             >
               {advanceStatus.isPending ? 'Closing…' : 'Close Period →'}
             </button>

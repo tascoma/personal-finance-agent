@@ -8,23 +8,21 @@ import Layout from '../components/Layout'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
 import PeriodStepper from '../components/PeriodStepper'
+import WorkflowHint from '../components/WorkflowHint'
 import Banner from '../components/Banner'
 import EmptyState from '../components/EmptyState'
 import SvgIcon from '../components/SvgIcon'
 import { fmtPeriod, fmtStatus } from '../utils/format'
 import type { OrchestrationResult, StatedBalanceItem } from '../types'
 
-const DOC_TYPES = [
-  { value: 'paystub', label: 'Paystub' },
-  { value: 'bank_statement', label: 'Bank Statement' },
-  { value: 'credit_card', label: 'Credit Card' },
-  { value: 'investment', label: 'Investment' },
-  { value: 'mortgage_statement', label: 'Mortgage Statement' },
-  { value: 'manual', label: 'Manual' },
-  { value: 'opening_balances', label: 'Opening Balances (xlsx)' },
-]
-
 const EDITABLE = (status: string) => status === 'open' || status === 'pending_close'
+
+const STATUS_HINTS: Record<string, string> = {
+  open: 'Upload and parse all your documents, then enter your stated balances. Advance when everything is parsed and ready for review.',
+  pending_review: 'Open the journal to review extracted transactions — approve or remove as needed. Advance when the journal looks correct.',
+  pending_close: 'Post approved journal entries to the ledger from the journal page. Advance to close the period once all entries are posted.',
+  closed: 'This period is closed. All journal entries have been posted to the ledger.',
+}
 
 export default function PeriodDetailPage() {
   const { periodId } = useParams<{ periodId: string }>()
@@ -33,14 +31,14 @@ export default function PeriodDetailPage() {
 
   const [activeTab, setActiveTab] = useState<'documents' | 'balances' | 'lifecycle'>('documents')
   const [error, setError] = useState<string | null>(null)
-  const [docType, setDocType] = useState('paystub')
-  const [sourceAcct, setSourceAcct] = useState('')
   const PICK_LABEL = 'Choose files (.pdf, .csv, .xlsx)'
   const [pickedFiles, setPickedFiles] = useState<File[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
   const [balances, setBalances] = useState<Record<number, string>>({})
   const [balancesInitialized, setBalancesInitialized] = useState(false)
   const [orchestrationResult, setOrchestrationResult] = useState<OrchestrationResult | null>(null)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
 
   // Manual transaction row state
   const [txnRows, setTxnRows] = useState([{ date: '', desc: '', amount: '', acct: '' }])
@@ -73,8 +71,6 @@ export default function PeriodDetailPage() {
       for (const f of files) {
         const fd = new FormData()
         fd.append('file', f)
-        fd.append('document_type', docType)
-        if (sourceAcct) fd.append('source_account_code', sourceAcct)
         await uploadDocument(periodId!, fd)
       }
     },
@@ -193,6 +189,7 @@ export default function PeriodDetailPage() {
       {error && <Banner variant="red" style={{ marginBottom: 16 }}>{error}</Banner>}
 
       {period && <PeriodStepper period={period} />}
+      {period && <WorkflowHint period={period} page="detail" />}
 
       <div className="tabs" style={{ marginTop: 16 }}>
         {(['documents', 'balances', 'lifecycle'] as const).map((t) => (
@@ -207,16 +204,14 @@ export default function PeriodDetailPage() {
         <>
           {canEdit && (
             <div className="card mb-16">
-              <div className="card-hd"><div className="card-title">Upload Document</div></div>
+              <div className="card-hd">
+                <div>
+                  <div className="card-title">Upload Documents</div>
+                  <div className="card-sub">Upload your paystubs and statements — the orchestrator will identify each document and its source account when you click Parse.</div>
+                </div>
+              </div>
               <div className="card-bd-sm">
                 <div className="form-row" style={{ alignItems: 'flex-end' }}>
-                  <select className="inp" style={{ width: 160 }} value={docType} onChange={(e) => setDocType(e.target.value)}>
-                    {DOC_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
-                  <select className="inp" style={{ width: 200 }} value={sourceAcct} onChange={(e) => setSourceAcct(e.target.value)}>
-                    <option value="">— source account —</option>
-                    {accounts.map((a) => <option key={a.account_code} value={a.account_code}>{a.account_code} · {a.account_name}</option>)}
-                  </select>
                   <label className={`file-input-label${pickedFiles.length > 0 ? ' file-input-label--has-file' : ''}`}>
                     <SvgIcon name="upload" size={14} />
                     <span>
@@ -250,7 +245,12 @@ export default function PeriodDetailPage() {
               </div>
               <div className="card-hd-right">
                 {canEdit && has_pending_documents && (
-                  <button className="btn btn-secondary btn-sm" disabled={parseAll.isPending} onClick={() => { setOrchestrationResult(null); parseAll.mutate() }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    disabled={parseAll.isPending}
+                    onClick={() => { setOrchestrationResult(null); parseAll.mutate() }}
+                    title="Identify each document and extract its transactions in one pass"
+                  >
                     {parseAll.isPending && <span className="spinner" style={{ marginRight: 6 }} />}
                     {parseAll.isPending ? 'Parsing…' : 'Parse'}
                   </button>
@@ -340,6 +340,7 @@ export default function PeriodDetailPage() {
                   <div className="card-title">Orchestration Result</div>
                   <div className="card-sub">
                     {orchestrationResult.parsed} parsed · {orchestrationResult.failed} failed
+                    {orchestrationResult.needs_review > 0 && ` · ${orchestrationResult.needs_review} need review`}
                     {orchestrationResult.classifier_ran && ` · classifier updated ${orchestrationResult.classifier_updated}`}
                   </div>
                 </div>
@@ -347,26 +348,42 @@ export default function PeriodDetailPage() {
                   <button className="btn btn-ghost btn-sm" onClick={() => setOrchestrationResult(null)}>Dismiss</button>
                 </div>
               </div>
+              {orchestrationResult.needs_review > 0 && (
+                <Banner variant="amber" style={{ margin: '0 16px 12px' }}>
+                  Some documents couldn't be matched to a source account. Pick one from the dropdown in the documents table above, then click Parse on that row.
+                </Banner>
+              )}
               <div className="table-scroll">
                 <table className="data-table">
                   <thead>
-                    <tr><th>File</th><th>Declared → Resolved</th><th>Classifier</th><th>Status</th></tr>
+                    <tr><th>File</th><th>Type</th><th>Source Account</th><th>Classifier</th><th>Status</th></tr>
                   </thead>
                   <tbody>
                     {orchestrationResult.steps.map((s) => (
                       <tr key={s.document_id}>
                         <td style={{ fontSize: 13 }}>{s.file_name}</td>
                         <td className="color-text2" style={{ fontSize: 12.5 }}>
-                          {s.reclassified ? (
-                            <span><span className="color-text3">{s.declared_type.replace(/_/g, ' ')}</span> → <strong>{s.resolved_type.replace(/_/g, ' ')}</strong></span>
+                          <div>{s.resolved_type.replace(/_/g, ' ')}</div>
+                          {s.type_reason && (
+                            <div className="color-text3" style={{ fontSize: 11, marginTop: 2 }}>{s.type_reason}</div>
+                          )}
+                        </td>
+                        <td className="color-text2" style={{ fontSize: 12.5 }}>
+                          {s.resolved_account_name ? (
+                            <div>{s.resolved_source_account_code} · {s.resolved_account_name}</div>
                           ) : (
-                            <span>{s.resolved_type.replace(/_/g, ' ')}</span>
+                            <div className="color-text3">— unresolved —</div>
+                          )}
+                          {s.source_account_reason && (
+                            <div className="color-text3" style={{ fontSize: 11, marginTop: 2 }}>{s.source_account_reason}</div>
                           )}
                         </td>
                         <td style={{ fontSize: 12.5 }}>{s.run_classifier ? 'yes' : '—'}</td>
                         <td>
                           <StatusBadge status={s.status} />
-                          {s.error && <div className="color-text3" style={{ fontSize: 11, marginTop: 2 }}>{s.error}</div>}
+                          {s.error && s.error !== s.source_account_reason && (
+                            <div className="color-text3" style={{ fontSize: 11, marginTop: 2 }}>{s.error}</div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -488,32 +505,50 @@ export default function PeriodDetailPage() {
           <div className="card">
             <div className="card-hd">
               <div>
-                <div className="card-title">Period Status</div>
-                <div className="card-sub">Move through the workflow phases</div>
+                <div className="card-title">Progress This Period</div>
+                <div className="card-sub">Advance through the workflow when each phase is complete</div>
               </div>
             </div>
             <div className="card-bd">
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {prev_status && (
-                  <button className="btn btn-ghost" disabled={stepBack.isPending} onClick={() => stepBack.mutate()}>
-                    ← Back to {fmtStatus(prev_status)}
-                  </button>
-                )}
+              <div className="lc-panel">
+                <div className="lc-eyebrow">Current phase</div>
+                <div className="lc-phase-row">
+                  <StatusBadge status={period.status} />
+                  <span className="lc-phase-name">{fmtStatus(period.status)}</span>
+                </div>
+                <p className="lc-hint">{STATUS_HINTS[period.status] ?? ''}</p>
+
                 {next_status && (
-                  <button className="btn btn-primary" disabled={advanceStatus.isPending} onClick={() => advanceStatus.mutate(next_status)}>
-                    Advance to {fmtStatus(next_status)} →
+                  <button
+                    className="btn btn-primary lc-advance-btn"
+                    disabled={advanceStatus.isPending}
+                    onClick={() => advanceStatus.mutate(next_status)}
+                  >
+                    <span>{advanceStatus.isPending ? 'Advancing…' : `Advance to ${fmtStatus(next_status)}`}</span>
+                    <span>→</span>
                   </button>
                 )}
+
                 {period.status === 'closed' && (
                   <button className="btn btn-secondary" disabled={reopen.isPending} onClick={() => reopen.mutate()}>
                     Reopen Period
                   </button>
                 )}
+
+                {prev_status && (
+                  <div className="lc-back-row">
+                    <span className="lc-back-label">Need to go back?</span>
+                    <button className="btn btn-ghost btn-sm" disabled={stepBack.isPending} onClick={() => stepBack.mutate()}>
+                      ← Back to {fmtStatus(prev_status)}
+                    </button>
+                  </div>
+                )}
+
+                <p className="color-text3" style={{ fontSize: 11.5, marginTop: prev_status ? 10 : 16 }}>
+                  Started {period.period_start}
+                  {period.closed_at && ` · Closed ${period.closed_at.slice(0, 16)} UTC`}
+                </p>
               </div>
-              <p className="color-text3" style={{ fontSize: 12, marginTop: 12 }}>
-                Current status: <strong>{fmtStatus(period.status)}</strong> · Period started {period.period_start}
-                {period.closed_at && ` · Closed ${period.closed_at.slice(0, 16)} UTC`}
-              </p>
             </div>
           </div>
 
@@ -540,11 +575,10 @@ export default function PeriodDetailPage() {
             </div>
           </div>
 
-          {canEdit && (
-            <div className="card">
+          <div className="card">
               <div className="card-hd"><div className="card-title">Danger Zone</div></div>
               <div className="card-bd" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {(staged_count > 0 || approved_count > 0) && (
+                {canEdit && (staged_count > 0 || approved_count > 0) && (
                   <div>
                     <button
                       className="btn btn-danger"
@@ -556,23 +590,57 @@ export default function PeriodDetailPage() {
                     <p className="color-text3" style={{ fontSize: 12, marginTop: 8 }}>Deletes all staged and approved transactions. Posted transactions are not affected.</p>
                   </div>
                 )}
-                {period.status === 'open' && (
-                  <div>
-                    <button
-                      className="btn btn-danger"
-                      disabled={del.isPending}
-                      onClick={() => { if (window.confirm('Delete this period? Cannot be undone.')) del.mutate() }}
-                    >
-                      Delete Period
-                    </button>
-                    <p className="color-text3" style={{ fontSize: 12, marginTop: 8 }}>Permanently deletes this period and all related data.</p>
-                  </div>
-                )}
+                <div>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => { setDeleteConfirmText(''); setShowDeleteModal(true) }}
+                  >
+                    Delete Period
+                  </button>
+                  <p className="color-text3" style={{ fontSize: 12, marginTop: 8 }}>Permanently deletes this period and all related data.</p>
+                </div>
               </div>
             </div>
-          )}
         </div>
       )}
+      {showDeleteModal && period && (() => {
+        const expected = fmtPeriod(period.period_start)
+        const matches = deleteConfirmText === expected
+        return (
+          <div className="modal-backdrop" onClick={() => setShowDeleteModal(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-hd">
+                <div className="modal-title">Delete period</div>
+                <div className="modal-sub">This action cannot be undone.</div>
+              </div>
+              <div className="modal-bd">
+                <p className="modal-confirm-label">
+                  All documents, transactions, and journal entries for this period will be permanently deleted.
+                  Type <strong>{expected}</strong> to confirm.
+                </p>
+                <input
+                  className="inp"
+                  placeholder={expected}
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && matches) { del.mutate() } }}
+                  autoFocus
+                />
+              </div>
+              <div className="modal-ft">
+                <button className="btn btn-ghost btn-sm" onClick={() => setShowDeleteModal(false)}>Cancel</button>
+                <button
+                  className="btn btn-danger btn-sm"
+                  disabled={!matches || del.isPending}
+                  onClick={() => del.mutate()}
+                >
+                  {del.isPending ? 'Deleting…' : 'Delete this period'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </Layout>
   )
 }

@@ -293,6 +293,7 @@ export interface JournalPageResponse {
   approved: RawTransaction[]
   entries: JournalEntryWithLines[]
   has_unclassified: boolean
+  documents: Document[]
   docs_missing_source: Document[]
   next_status: string | null
   prev_status: string | null

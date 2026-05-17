@@ -211,6 +211,7 @@ class JournalPageResponse(BaseModel):
     approved: list[RawTransactionRead]
     entries: list[JournalEntryWithLines]
     has_unclassified: bool
+    documents: list[DocumentRead]
     docs_missing_source: list[DocumentRead]
     next_status: Optional[str]
     prev_status: Optional[str]
