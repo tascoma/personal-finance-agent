@@ -11,7 +11,7 @@ Business rules:
 - period_start is the first day of the month; period_end is the last day.
 - Only one period may exist per month (enforced by unique index on period_start).
 - Forward transitions are one step at a time along the lifecycle.
-- A period can only be deleted while it is still `open`.
+- A period can be deleted at any status; all child records are removed first.
 """
 
 import calendar
@@ -20,10 +20,16 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.document import Document
+from app.models.journal import JournalEntry, JournalLine
 from app.models.period import Period
+from app.models.raw_transaction import RawTransaction
+from app.models.reconciliation import Reconciliation
+from app.models.review_queue import ReviewQueue
+from app.models.stated_balance import StatedBalance
 
 logger = logging.getLogger(__name__)
 
@@ -160,8 +166,20 @@ async def delete_period(db: AsyncSession, period_id: uuid.UUID) -> None:
     period = await db.get(Period, period_id)
     if period is None:
         raise PeriodError("Period not found")
-    if period.status != "open":
-        raise PeriodError("Only periods in 'open' status can be deleted")
+
+    # Delete in FK dependency order so no constraint is violated.
+    # review_queue → raw_transactions → journal_lines → journal_entries
+    #              → documents → stated_balances → reconciliation → period
+    await db.execute(delete(ReviewQueue).where(ReviewQueue.period_id == period_id))
+    await db.execute(delete(RawTransaction).where(RawTransaction.period_id == period_id))
+    entry_ids = await db.scalars(
+        select(JournalEntry.entry_id).where(JournalEntry.period_id == period_id)
+    )
+    await db.execute(delete(JournalLine).where(JournalLine.entry_id.in_(list(entry_ids))))
+    await db.execute(delete(JournalEntry).where(JournalEntry.period_id == period_id))
+    await db.execute(delete(Document).where(Document.period_id == period_id))
+    await db.execute(delete(StatedBalance).where(StatedBalance.period_id == period_id))
+    await db.execute(delete(Reconciliation).where(Reconciliation.period_id == period_id))
     await db.delete(period)
     await db.commit()
     logger.info("Deleted period %s", period_id)

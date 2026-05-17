@@ -96,13 +96,14 @@ async def test_status_transition_illegal_skip(session_factory):
 
 
 @pytest.mark.asyncio
-async def test_delete_only_when_open(session_factory):
+async def test_delete_any_status(session_factory):
     async with session_factory() as session:
         period = await period_service.create_period(session, 2026, 1)
         pid = period.period_id
         await period_service.update_status(session, pid, "pending_review")
-        with pytest.raises(period_service.PeriodError):
-            await period_service.delete_period(session, pid)
+        await period_service.delete_period(session, pid)
+        remaining = await session.scalar(select(Period).where(Period.period_id == pid))
+        assert remaining is None
 
 
 @pytest.mark.asyncio
