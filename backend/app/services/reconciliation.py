@@ -139,12 +139,15 @@ async def compute_account_balances(
 async def run_reconciliation(
     db: AsyncSession,
     period_id: uuid.UUID,
-) -> list[Reconciliation]:
+) -> tuple[list[Reconciliation], dict[int, dict]]:
     """Compute and persist Reconciliation rows for the given period.
 
     Idempotent: deletes any existing rows for this period before inserting.
     Raises ReconciliationError if the period is not in pending_close status
     or if no stated balances exist.
+
+    Returns (rows, balances). Callers that need to render a reconciliation
+    page can reuse `balances` to avoid recomputing it from scratch.
     """
     period = await db.get(Period, period_id)
     if period is None:
@@ -166,30 +169,31 @@ async def run_reconciliation(
         await db.delete(row)
     await db.flush()
 
-    recon_rows: list[Reconciliation] = []
     for code, data in balances.items():
         gap = data["stated_balance"] - data["computed_balance"]
         status = "reconciled" if gap == _ZERO else "pending"
-        row = Reconciliation(
+        db.add(Reconciliation(
             period_id=period_id,
             account_code=code,
             computed_balance=data["computed_balance"],
             stated_balance=data["stated_balance"],
             status=status,
-        )
-        db.add(row)
-        recon_rows.append(row)
+        ))
 
     await db.commit()
-    for row in recon_rows:
-        await db.refresh(row)
+
+    # Single SELECT to repopulate the rows with DB-computed columns (gap, run_at)
+    # — replaces an N-roundtrip per-row refresh loop.
+    recon_rows = list((await db.scalars(
+        select(Reconciliation).where(Reconciliation.period_id == period_id)
+    )).all())
 
     reconciled = sum(1 for r in recon_rows if r.status == "reconciled")
     logger.info(
         "Reconciliation complete for period %s: %d/%d accounts reconciled",
         period_id, reconciled, len(recon_rows),
     )
-    return recon_rows
+    return recon_rows, balances
 
 
 async def create_unrealized_gl_entry(
