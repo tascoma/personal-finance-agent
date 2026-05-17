@@ -4,7 +4,7 @@ from datetime import date as date_type
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db_session
@@ -133,17 +133,16 @@ async def approve_all_staged(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
 ) -> CountResult:
-    staged = await db.scalars(
-        select(RawTransaction).where(
+    result = await db.execute(
+        update(RawTransaction)
+        .where(
             RawTransaction.period_id == period_id,
             RawTransaction.status == "staged",
         )
+        .values(status="approved")
     )
-    updated = 0
-    for txn in staged.all():
-        txn.status = "approved"
-        updated += 1
     await db.commit()
+    updated = result.rowcount or 0
     logger.info("Approved all %d staged transactions for period %s", updated, period_id)
     return CountResult(count=updated)
 
@@ -153,17 +152,16 @@ async def unapprove_all(
     period_id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
 ) -> CountResult:
-    approved = await db.scalars(
-        select(RawTransaction).where(
+    result = await db.execute(
+        update(RawTransaction)
+        .where(
             RawTransaction.period_id == period_id,
             RawTransaction.status == "approved",
         )
+        .values(status="staged")
     )
-    updated = 0
-    for txn in approved.all():
-        txn.status = "staged"
-        updated += 1
     await db.commit()
+    updated = result.rowcount or 0
     logger.info("Unapproved all %d transactions for period %s", updated, period_id)
     return CountResult(count=updated)
 
