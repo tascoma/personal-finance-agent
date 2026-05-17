@@ -18,7 +18,7 @@ Practice project for building a full-stack web app with a FastAPI backend and Re
 - **Small, focused changes.** One concern per commit. Don't bundle refactors with feature work.
 - **No comments for what the code says.** Only comment the *why* when it's non-obvious (a workaround, a constraint, a subtle invariant).
 - **Never commit secrets.** `.env` stays gitignored; `.env.example` documents the shape.
-- **Never load log files.** Do not read files from `backend/logs/` — they are runtime output and can be large. Diagnose issues from source code, tests, and structured logging configuration instead.
+- **Reading log files is fine, but be targeted.** `backend/logs/app.log` is fair game for debugging. It can be large, so prefer `grep` / `tail` over reading the whole file. Combine the source code, tests, structured logging config, and recent log output when diagnosing an issue.
 
 ## Tech stack
 
