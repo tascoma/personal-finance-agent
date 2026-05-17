@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Iterable, Optional
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -327,8 +327,22 @@ async def compute_balance_sheet_pivot(db: AsyncSession) -> BalanceSheetPivot:
     cumulative). They never roll into total_assets/liabilities/equity.
     """
     accounts = await _load_accounts(db)
-    periods_result = await db.scalars(select(Period).where(Period.status == "closed").order_by(Period.period_start.asc()))
-    periods = list(periods_result.all())
+    # Anchor on the latest closed period, but include any earlier still-open
+    # periods as columns too. This keeps bootstrap/seed entries posted to an
+    # earlier "opening balances" period rolling into the cumulative columns
+    # even if that seed period was never formally closed.
+    max_closed_start = (await db.scalars(
+        select(func.max(Period.period_start)).where(Period.status == "closed")
+    )).first()
+    if max_closed_start is None:
+        periods: list[Period] = []
+    else:
+        periods_result = await db.scalars(
+            select(Period)
+            .where(Period.period_start <= max_closed_start)
+            .order_by(Period.period_start.asc())
+        )
+        periods = list(periods_result.all())
 
     if not periods:
         return BalanceSheetPivot(

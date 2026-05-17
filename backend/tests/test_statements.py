@@ -218,6 +218,45 @@ async def test_balance_sheet_pivot_off_balance_sheet_section(session_factory):
 
 
 @pytest.mark.asyncio
+async def test_balance_sheet_pivot_includes_open_seed_period(session_factory):
+    """A still-open earlier period with seed/opening-balance entries should
+    contribute to cumulative columns for later closed periods."""
+    import uuid
+
+    async with session_factory() as session:
+        seed = await period_service.create_period(session, 2026, 3)
+
+    # Post an opening-balance adjusting entry to the seed period (leave it open).
+    async with session_factory() as session:
+        eid = uuid.uuid4()
+        session.add(JournalEntry(
+            entry_id=eid, period_id=seed.period_id, entry_date=date(2026, 3, 31),
+            description="Opening balances — manual seed", source_type="adjusting",
+            source_document_id=None, created_by="python",
+        ))
+        session.add_all([
+            JournalLine(entry_id=eid, account_code=100101,
+                        debit_amount=Decimal("5000.00"), credit_amount=Decimal("0")),
+            JournalLine(entry_id=eid, account_code=300101,
+                        debit_amount=Decimal("0"), credit_amount=Decimal("5000.00")),
+        ])
+        await session.commit()
+
+    # April period with normal activity, then close it.
+    april = await _seed_period_with_entries(session_factory, 2026, 4)
+
+    async with session_factory() as session:
+        pivot = await statements_service.compute_balance_sheet_pivot(session)
+
+    assert [p.period_id for p in pivot.periods] == [seed.period_id, april.period_id]
+    checking_row = next(
+        r for sec in pivot.assets for r in sec.rows if r.account_code == 100101
+    )
+    # March = seeded opening 5000; April = 5000 + (3000 net pay - 150 groceries) = 7850.
+    assert checking_row.balances == [Decimal("5000.00"), Decimal("7850.00")]
+
+
+@pytest.mark.asyncio
 async def test_cashflow_classifies_operating(session_factory):
     period = await _seed_period_with_entries(session_factory, 2026, 1)
 
