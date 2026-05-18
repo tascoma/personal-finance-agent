@@ -946,3 +946,85 @@ select.inp { cursor: pointer; appearance: none; }
 }
 
 .modal-confirm-label strong { color: var(--text-1); font-family: 'DM Mono', monospace; }
+
+/* ─── Print / PDF export ───────────────────────────────────────── */
+@media print {
+  @page {
+    size: letter landscape;
+    margin: 0.4in;
+  }
+
+  :root, [data-theme="light"] {
+    --bg: #ffffff;
+    --bg-sidebar: #ffffff;
+    --bg-card: #ffffff;
+    --bg-surface: #ffffff;
+    --bg-hover: #ffffff;
+    --text-1: #000000;
+    --text-2: #333333;
+    --text-3: #666666;
+    --border: #d1d5db;
+    --border-md: #9ca3af;
+    --red: #b91c1c;
+  }
+
+  body { background: #ffffff !important; }
+
+  .app-header,
+  .sidebar,
+  .print-hide,
+  .page-header-right,
+  .card-hd-right {
+    display: none !important;
+  }
+
+  .main {
+    margin-left: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
+
+  .page-header {
+    padding: 0 !important;
+    margin-bottom: 8px !important;
+  }
+  .page-header h1 { font-size: 16pt !important; color: #000 !important; }
+  .page-subtitle { font-size: 9pt !important; color: #555 !important; }
+
+  .statement-card {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+    background: #ffffff !important;
+    margin-bottom: 0 !important;
+    break-after: page;
+    page-break-after: always;
+  }
+  .statement-card:last-of-type {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .statement-card .card-hd {
+    padding: 6px 10px !important;
+    border-bottom-color: #bbb !important;
+  }
+  .statement-card .card-bd {
+    padding: 6px 10px !important;
+  }
+  .statement-card .card-title { font-size: 12pt !important; color: #000 !important; }
+  .statement-card .card-sub { font-size: 8pt !important; color: #555 !important; }
+
+  .statement-card .data-table {
+    font-size: 8.5pt;
+    width: 100%;
+  }
+  .statement-card .data-table th,
+  .statement-card .data-table td {
+    padding: 1.5px 6px !important;
+    line-height: 1.25 !important;
+  }
+  .statement-card .data-table th {
+    border-bottom: 1px solid #888 !important;
+    color: #000 !important;
+  }
+}
